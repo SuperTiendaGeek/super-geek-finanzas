@@ -26,6 +26,9 @@ export interface Transaccion {
   descripcionObservaciones?: string;
   descripcion?: string;
   referenciaExterna?: string;
+  esDistribucionContable?: boolean;
+  componenteDistribuido?: string;
+  montoDistribuido?: number;
   creadoPor?: string;
   fechaRegistro?: string;
   idTransaccionAirtable?: string;

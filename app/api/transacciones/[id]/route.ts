@@ -21,6 +21,9 @@ const FIELD_REFERENCIA = "Referencia Externa";
 const FIELD_FECHA = "Fecha";
 const FIELD_CONCEPTO = "Concepto";
 const FIELD_ESTADO = "Estado";
+const FIELD_ES_DISTRIBUCION = "Es Distribución Contable";
+const FIELD_COMPONENTE = "Componente Distribuido";
+const FIELD_MONTO_DISTRIBUIDO = "Monto Distribuido";
 
 function pickLinkedId(value: unknown): string | null {
   if (Array.isArray(value)) return (value[0] as string | undefined) ?? null;
@@ -115,3 +118,4 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
+

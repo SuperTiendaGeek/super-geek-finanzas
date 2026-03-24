@@ -4,10 +4,12 @@ import { useMemo, useState } from "react";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import DistribucionPanel from "@/components/distribucion/DistribucionPanel";
 import { DEFAULT_CURRENCY } from "@/lib/constants";
 import { formatCurrency, formatDate, safeNumber } from "@/lib/helpers";
 import { Cuenta } from "@/types/cuenta";
 import { Pendiente } from "@/types/pendiente";
+import type { DistribucionContable } from "@/services/distribucion";
 import { Transaccion } from "@/types/transaccion";
 
 type Filters = {
@@ -23,6 +25,8 @@ type Props = {
   cuentas: Cuenta[];
   transacciones: Transaccion[];
   pendientes: Pendiente[];
+  distribucion: DistribucionContable;
+  saldoIngresos: number;
   currency?: string;
 };
 
@@ -199,7 +203,7 @@ function triggerDownload(filename: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function ReportesView({ cuentas, transacciones, pendientes, currency = DEFAULT_CURRENCY }: Props) {
+export default function ReportesView({ cuentas, transacciones, pendientes, distribucion, saldoIngresos, currency = DEFAULT_CURRENCY }: Props) {
   const [draftFilters, setDraftFilters] = useState<Filters>(INITIAL_FILTERS);
   const [filters, setFilters] = useState<Filters>(INITIAL_FILTERS);
 
@@ -459,6 +463,7 @@ export default function ReportesView({ cuentas, transacciones, pendientes, curre
 
   return (
     <div className="space-y-6">
+      <DistribucionPanel distribucion={distribucion} saldoIngresos={saldoIngresos} currency={currency} />
       <Card title="Filtros" description="Acota el periodo y los criterios que quieres analizar">
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           <label className="text-sm font-medium text-slate-700">
@@ -733,3 +738,12 @@ export default function ReportesView({ cuentas, transacciones, pendientes, curre
     </div>
   );
 }
+
+
+
+
+
+
+
+
+

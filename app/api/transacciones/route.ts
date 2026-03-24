@@ -21,6 +21,9 @@ const FIELD_REFERENCIA = "Referencia Externa";
 const FIELD_FECHA = "Fecha";
 const FIELD_CONCEPTO = "Concepto";
 const FIELD_ESTADO = "Estado";
+const FIELD_ES_DISTRIBUCION = "Es Distribución Contable";
+const FIELD_COMPONENTE = "Componente Distribuido";
+const FIELD_MONTO_DISTRIBUIDO = "Monto Distribuido";
 
 function pickLinkedId(value: unknown): string | null {
   if (Array.isArray(value)) return (value[0] as string | undefined) ?? null;
@@ -95,6 +98,9 @@ export async function GET() {
           llevaFactura: Boolean(fields[FIELD_LLEVA_FACTURA]),
           descripcionObservaciones: (fields[FIELD_OBSERVACIONES] as string | undefined) ?? undefined,
           referenciaExterna: (fields[FIELD_REFERENCIA] as string | undefined) ?? undefined,
+        esDistribucionContable: Boolean(fields[FIELD_ES_DISTRIBUCION]),
+        componenteDistribuido: (fields[FIELD_COMPONENTE] as string | undefined) ?? undefined,
+        montoDistribuido: pickNumber(fields[FIELD_MONTO_DISTRIBUIDO], 0),
         } as Transaccion;
       })
       .filter((tx) => tx.id)
@@ -112,3 +118,4 @@ export async function GET() {
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
+

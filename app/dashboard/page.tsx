@@ -3,8 +3,10 @@ import { StatCard, Section } from "@/components/dashboard/StatCard";
 import RecentActivity from "@/components/dashboard/RecentActivity";
 import AlertsPanel from "@/components/dashboard/AlertsPanel";
 import Card from "@/components/ui/Card";
+import DistribucionPanel from "@/components/distribucion/DistribucionPanel";
 import { getCuentas } from "@/services/cuentas";
 import { getTransacciones } from "@/services/transacciones";
+import { calcularDistribucionContable } from "@/services/distribucion";
 import { getPendientes } from "@/services/pendientes";
 import { calcularSaldosPorCuenta } from "@/lib/calculations";
 import { formatCurrency } from "@/lib/helpers";
@@ -12,7 +14,6 @@ import { DEFAULT_CURRENCY } from "@/lib/constants";
 import { Cuenta } from "@/types/cuenta";
 import { Transaccion } from "@/types/transaccion";
 export const dynamic = "force-dynamic";
-
 
 function normalize(value: string | undefined | null) {
   return (value ?? "").toLowerCase();
@@ -53,14 +54,6 @@ function inCurrentMonth(fecha: string) {
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
 }
 
-function buildDistribuido(transacciones: Transaccion[], destinoNombre: string) {
-  return transacciones
-    .filter((t) => isConfirmed(t))
-    .filter((t) => normalize(t.cuentaOrigen ?? t.cuentaOrigenId ?? "") === "sgingresos")
-    .filter((t) => normalize(t.cuentaDestino ?? t.cuentaDestinoId ?? "") === normalize(destinoNombre))
-    .reduce((acc, t) => acc + (t.montoTotal || 0), 0);
-}
-
 function pickSaldoPorNombre(nombre: string, cuentas: Cuenta[], saldos: Record<string, number>) {
   const cuenta = cuentas.find((c) => c.nombre === nombre);
   if (!cuenta) return 0;
@@ -92,9 +85,7 @@ export default async function DashboardPage() {
   const saldoCaja = pickSaldoPorNombre("Caja Registradora", cuentas, saldos);
   const saldoIngresos = pickSaldoPorNombre("SGINGRESOS", cuentas, saldos);
 
-  const capitalAcumulado = buildDistribuido(transacciones, "sgcapital");
-  const utilidadAcumulada = buildDistribuido(transacciones, "sgutilidad");
-  const ivaAcumulado = buildDistribuido(transacciones, "sgiva");
+  const distribucion = calcularDistribucionContable(transacciones);
 
   const transaccionesOrdenadas = [...transacciones].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
@@ -104,6 +95,12 @@ export default async function DashboardPage() {
 
   const anuladas = transacciones.filter((t) => isCanceled(t)).slice(0, 3);
   if (anuladas.length) alerts.push(`Hay ${anuladas.length} movimiento(s) anulado(s) reciente(s).`);
+
+  const distribucionItems = [
+    ["Capital", distribucion.capital],
+    ["Utilidad", distribucion.utilidad],
+    ["IVA", distribucion.iva],
+  ] as const;
 
   return (
     <PageContainer title="Dashboard" subtitle="Visión general de tus finanzas" actions={null}>
@@ -119,12 +116,8 @@ export default async function DashboardPage() {
           </div>
         </Section>
 
-        <Section title="Distribución contable" description="Movimientos desde SGINGRESOS hacia cuentas destino">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <StatCard label="Capital acumulado" value={capitalAcumulado} currency={DEFAULT_CURRENCY} tone="blue" />
-            <StatCard label="Utilidad acumulada" value={utilidadAcumulada} currency={DEFAULT_CURRENCY} tone="violet" />
-            <StatCard label="IVA acumulado" value={ivaAcumulado} currency={DEFAULT_CURRENCY} tone="amber" />
-          </div>
+        <Section title="Distribución contable" description="Generado, distribuido y pendiente por componente">
+          <DistribucionPanel distribucion={distribucion} saldoIngresos={saldoIngresos} currency={DEFAULT_CURRENCY} />
         </Section>
 
         <Section title="Actividad reciente" description="Últimas transacciones registradas">
@@ -163,4 +156,5 @@ export default async function DashboardPage() {
     </PageContainer>
   );
 }
+
 
