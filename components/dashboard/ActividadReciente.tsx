@@ -1,4 +1,4 @@
-import Card from "@/components/ui/Card";
+﻿import Card from "@/components/ui/Card";
 import { formatCurrency, formatDate } from "@/lib/helpers";
 import { Transaccion } from "@/types/transaccion";
 
@@ -12,27 +12,25 @@ export default function ActividadReciente({ items = [] }: ActividadRecienteProps
   return (
     <Card title="Actividad reciente" description="Ultimos movimientos registrados">
       <ul className="space-y-3">
-        {lista.map((item) => (
-          <li
-            key={item.id}
-            className="flex items-start justify-between rounded-md border border-slate-100 px-3 py-2"
-          >
-            <div>
-              <p className="text-sm font-medium text-slate-800">
-                {item.descripcion || "Movimiento"}
+        {lista.map((item) => {
+          const tipo = (item.tipoTransaccion || "").toLowerCase();
+          const esEgreso = tipo === "egreso";
+          const monto = item.montoTotal ?? 0;
+          const descripcion = item.descripcion ?? item.concepto ?? "Movimiento";
+
+          return (
+            <li key={item.id} className="flex items-start justify-between rounded-md border border-slate-100 px-3 py-2">
+              <div>
+                <p className="text-sm font-medium text-slate-800">{descripcion}</p>
+                <p className="text-xs text-slate-500">{formatDate(item.fecha)}</p>
+              </div>
+              <p className={`text-sm font-semibold ${esEgreso ? "text-rose-600" : "text-emerald-600"}`}>
+                {esEgreso ? "-" : "+"}
+                {formatCurrency(monto)}
               </p>
-              <p className="text-xs text-slate-500">{formatDate(item.fecha)}</p>
-            </div>
-            <p
-              className={`text-sm font-semibold ${
-                item.tipo === "ingreso" ? "text-emerald-600" : "text-rose-600"
-              }`}
-            >
-              {item.tipo === "egreso" ? "-" : "+"}
-              {formatCurrency(item.monto)}
-            </p>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </Card>
   );
@@ -42,11 +40,12 @@ function getPlaceholder(): Transaccion[] {
   return [
     {
       id: "tx-placeholder-1",
-      cuentaId: "cta-001",
-      tipo: "ingreso",
-      monto: 0,
-      descripcion: "Sin datos aun",
       fecha: new Date().toISOString(),
+      tipoTransaccion: "ingreso",
+      concepto: "Sin datos aun",
+      estado: "pendiente",
+      montoTotal: 0,
     },
   ];
 }
+

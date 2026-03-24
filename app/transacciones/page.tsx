@@ -2,9 +2,12 @@
 import TransaccionesTable from "@/components/transacciones/TransaccionesTable";
 import { getTransacciones } from "@/services/transacciones";
 import { DEFAULT_CURRENCY } from "@/lib/constants";
+import { Transaccion } from "@/types/transaccion";
+export const dynamic = "force-dynamic";
+
 
 export default async function TransaccionesPage() {
-  let transacciones = [];
+  let transacciones: Transaccion[] = [];
 
   try {
     transacciones = await getTransacciones();
@@ -21,3 +24,4 @@ export default async function TransaccionesPage() {
     </PageContainer>
   );
 }
+

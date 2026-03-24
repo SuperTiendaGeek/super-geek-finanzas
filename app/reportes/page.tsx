@@ -1,8 +1,10 @@
-import PageContainer from "@/components/layout/PageContainer";
+﻿import PageContainer from "@/components/layout/PageContainer";
 import ReportesView from "@/components/reportes/ReportesView";
 import { getCuentas } from "@/services/cuentas";
 import { getPendientes } from "@/services/pendientes";
 import { getTransacciones } from "@/services/transacciones";
+export const dynamic = "force-dynamic";
+
 
 export default async function ReportesPage() {
   const [cuentas, transacciones, pendientes] = await Promise.all([
@@ -17,3 +19,4 @@ export default async function ReportesPage() {
     </PageContainer>
   );
 }
+

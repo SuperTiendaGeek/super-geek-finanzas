@@ -8,6 +8,7 @@ const toneStyles: Record<string, string> = {
   amber: "bg-amber-50 border-amber-100",
   blue: "bg-sky-50 border-sky-100",
   violet: "bg-violet-50 border-violet-100",
+  indigo: "bg-indigo-50 border-indigo-100",
 };
 
 interface StatCardProps {
@@ -15,7 +16,7 @@ interface StatCardProps {
   value: number;
   currency?: string;
   hint?: string;
-  tone?: "neutral" | "green" | "red" | "amber" | "blue" | "violet";
+  tone?: "neutral" | "green" | "red" | "amber" | "blue" | "violet" | "indigo";
   icon?: ReactNode;
 }
 
@@ -57,3 +58,4 @@ export function Section({ title, description, children }: SectionProps) {
     </section>
   );
 }
+

@@ -1,6 +1,8 @@
 ﻿import PageContainer from "@/components/layout/PageContainer";
 import MovimientoForm from "@/components/movimientos/MovimientoForm";
 import { Cuenta } from "@/types/cuenta";
+export const dynamic = "force-dynamic";
+
 
 function resolveApiUrl(path: string) {
   const base =
@@ -37,3 +39,4 @@ export default async function NuevoMovimientoPage() {
     </PageContainer>
   );
 }
+

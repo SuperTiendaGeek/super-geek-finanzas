@@ -11,6 +11,8 @@ import { formatCurrency } from "@/lib/helpers";
 import { DEFAULT_CURRENCY } from "@/lib/constants";
 import { Cuenta } from "@/types/cuenta";
 import { Transaccion } from "@/types/transaccion";
+export const dynamic = "force-dynamic";
+
 
 function normalize(value: string | undefined | null) {
   return (value ?? "").toLowerCase();
@@ -161,3 +163,4 @@ export default async function DashboardPage() {
     </PageContainer>
   );
 }
+

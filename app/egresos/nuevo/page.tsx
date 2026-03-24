@@ -1,6 +1,8 @@
-import PageContainer from "@/components/layout/PageContainer";
+﻿import PageContainer from "@/components/layout/PageContainer";
 import EgresoForm from "@/components/egresos/EgresoForm";
 import { Cuenta } from "@/types/cuenta";
+export const dynamic = "force-dynamic";
+
 
 function resolveApiUrl(path: string) {
   const base =
@@ -16,7 +18,7 @@ async function getCuentasEgreso(): Promise<Cuenta[]> {
     const payload = (await res.json()) as { success?: boolean; data?: Cuenta[] };
 
     if (!res.ok || !payload?.success || !Array.isArray(payload.data)) {
-      throw new Error("Respuesta inválida de cuentas");
+      throw new Error("Respuesta invÃ¡lida de cuentas");
     }
 
     return payload.data.filter((c) => c.permiteEgresos);
@@ -35,3 +37,4 @@ export default async function NuevoEgresoPage() {
     </PageContainer>
   );
 }
+

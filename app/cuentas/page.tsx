@@ -7,6 +7,8 @@ import { getCuentas } from "@/services/cuentas";
 import { getTransacciones } from "@/services/transacciones";
 import { Cuenta } from "@/types/cuenta";
 import { Transaccion } from "@/types/transaccion";
+export const dynamic = "force-dynamic";
+
 
 function pickSaldo(nombre: string, cuentas: Cuenta[], saldos: Record<string, number>) {
   const c = cuentas.find((cuenta) => cuenta.nombre === nombre);
@@ -69,3 +71,4 @@ export default async function CuentasPage() {
     </PageContainer>
   );
 }
+

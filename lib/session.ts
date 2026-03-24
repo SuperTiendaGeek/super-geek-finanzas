@@ -26,15 +26,17 @@ function fromBase64Url(str: string): Uint8Array {
 }
 
 async function hmacSign(data: string, secret: Uint8Array): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", key, textEncoder.encode(data));
+  const key = await crypto.subtle.importKey("raw", secret.buffer as ArrayBuffer, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const dataBytes = textEncoder.encode(data);
+  const sig = await crypto.subtle.sign("HMAC", key, dataBytes);
   return toBase64Url(new Uint8Array(sig));
 }
 
 async function hmacVerify(data: string, signatureB64Url: string, secret: Uint8Array): Promise<boolean> {
-  const key = await crypto.subtle.importKey("raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  const key = await crypto.subtle.importKey("raw", secret.buffer as ArrayBuffer, { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
   const sigBytes = fromBase64Url(signatureB64Url);
-  return crypto.subtle.verify("HMAC", key, sigBytes, textEncoder.encode(data));
+  const dataBytes = textEncoder.encode(data);
+  return crypto.subtle.verify("HMAC", key, sigBytes.buffer as ArrayBuffer, dataBytes);
 }
 
 export async function signSession(payload: Record<string, unknown>) {
@@ -85,3 +87,4 @@ export async function verifySession(token?: string) {
 
 export const sessionCookieName = SESSION_COOKIE;
 export const sessionTtlSeconds = SESSION_TTL_SECONDS;
+
