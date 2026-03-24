@@ -1,10 +1,11 @@
-﻿import Link from "next/link";
+import Link from "next/link";
+import { ReactNode } from "react";
 import PageContainer from "@/components/layout/PageContainer";
 import Card from "@/components/ui/Card";
 import { formatCurrency, formatDate } from "@/lib/helpers";
 import { getCuentaDetalle } from "@/services/cuentas";
 
-function Field({ label, value }: { label: string; value: string | number | null | undefined }) {
+function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex flex-col text-sm">
       <span className="text-xs uppercase text-slate-500">{label}</span>
