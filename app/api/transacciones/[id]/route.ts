@@ -76,9 +76,10 @@ function mapTransaccion(
   };
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const recordId = decodeURIComponent(params.id);
+    const { id } = await context.params;
+    const recordId = decodeURIComponent(id);
 
     const tableTx = process.env.AIRTABLE_TABLE_TRANSACCIONES;
     const tableCuentas = process.env.AIRTABLE_TABLE_CUENTAS;
