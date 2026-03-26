@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { fetchAirtableRecords } from "@/lib/airtable";
 import { Pendiente } from "@/types/pendiente";
 import { safeNumber } from "@/lib/helpers";
@@ -21,12 +21,15 @@ export async function GET() {
   try {
     const table = process.env.AIRTABLE_TABLE_MOVIMIENTOS_PENDIENTES;
     const tableCuentas = process.env.AIRTABLE_TABLE_CUENTAS;
+    const tableTx = process.env.AIRTABLE_TABLE_TRANSACCIONES;
     if (!table) throw new Error("Variable de entorno requerida faltante: AIRTABLE_TABLE_MOVIMIENTOS_PENDIENTES");
     if (!tableCuentas) throw new Error("Variable de entorno requerida faltante: AIRTABLE_TABLE_CUENTAS");
+    if (!tableTx) throw new Error("Variable de entorno requerida faltante: AIRTABLE_TABLE_TRANSACCIONES");
 
-    const [records, cuentas] = await Promise.all([
+    const [records, cuentas, transacciones] = await Promise.all([
       fetchAirtableRecords<Record<string, unknown>>(table),
       fetchAirtableRecords<Record<string, unknown>>(tableCuentas),
+      fetchAirtableRecords<Record<string, unknown>>(tableTx),
     ]);
 
     const cuentasMap: Record<string, string> = cuentas.reduce((acc, r) => {
@@ -34,6 +37,18 @@ export async function GET() {
       if (r.id && nombre) acc[r.id] = nombre;
       return acc;
     }, {} as Record<string, string>);
+
+    const transaccionesMap: Record<string, { capital: number; utilidad: number; iva: number; montoTotal: number }>
+      = transacciones.reduce((acc, r) => {
+        const f = r.fields ?? {};
+        acc[r.id] = {
+          capital: pickNumber(f["Capital"], 0),
+          utilidad: pickNumber(f["Utilidad"], 0),
+          iva: pickNumber(f["IVA"], 0),
+          montoTotal: pickNumber(f["Monto Total"], 0),
+        };
+        return acc;
+      }, {} as Record<string, { capital: number; utilidad: number; iva: number; montoTotal: number }>);
 
     const soloPendientes = records.filter((r) => {
       const estado = pickString(r.fields?.["Estado"] ?? "Pendiente").toLowerCase();
@@ -43,15 +58,24 @@ export async function GET() {
     const data: Pendiente[] = soloPendientes.map((r) => {
       const f = r.fields ?? {};
       const cuentaId = pickLinkedId(f["Cuenta Destino Final"]);
+      const transaccionRelacionadaId = pickLinkedId(f["Transacción Relacionada"]);
+      const transRelacionada = transaccionRelacionadaId ? transaccionesMap[transaccionRelacionadaId] : undefined;
+      const capital = pickNumber(f["Capital"], transRelacionada?.capital ?? 0);
+      const utilidad = pickNumber(f["Utilidad"], transRelacionada?.utilidad ?? 0);
+      const iva = pickNumber(f["IVA"], transRelacionada?.iva ?? 0);
+      const montoEsperado = pickNumber(f["Monto Esperado"], transRelacionada?.montoTotal ?? 0);
       return {
         id: r.id,
-        transaccionRelacionadaId: pickLinkedId(f["Transacci\u00f3n Relacionada"]),
-        medio: pickString(f["Medio"] ?? f["M\u00e9todo de Pago"]),
+        transaccionRelacionadaId,
+        medio: pickString(f["Medio"] ?? f["Método de Pago"]),
         fecha: pickString(f["Fecha"] ?? ""),
-        fechaEstimada: pickString(f["Fecha Estimada de Acreditaci\u00f3n"] ?? "") || null,
-        montoEsperado: pickNumber(f["Monto Esperado"], 0),
-        comisionEstimada: pickNumber(f["Comisi\u00f3n Estimada"], 0),
-        comisionReal: pickNumber(f["Comisi\u00f3n Real"], 0) || null,
+        fechaEstimada: pickString(f["Fecha Estimada de Acreditación"] ?? "") || null,
+        montoEsperado,
+        capital,
+        utilidad,
+        iva,
+        comisionEstimada: pickNumber(f["Comisión Estimada"], 0),
+        comisionReal: pickNumber(f["Comisión Real"], 0) || null,
         montoRealAcreditado: safeNumber(f["Monto Real Acreditado"], 0) || null,
         estado: pickString(f["Estado"] ?? "Pendiente"),
         cuentaDestinoFinalId: cuentaId,
@@ -66,3 +90,4 @@ export async function GET() {
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
+

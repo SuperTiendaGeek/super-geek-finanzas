@@ -1,4 +1,5 @@
 ﻿import { Transaccion } from "@/types/transaccion";
+import { roundMoney } from "@/lib/helpers";
 
 export type ResumenComponente = {
   generado: number;
@@ -18,7 +19,7 @@ function esValida(tx: Transaccion): boolean {
   const estado = normalize(tx.estado);
   if (!estado) return true;
   if (estado.includes("anul") || estado.includes("cancel")) return false;
-  if (estado.includes("pend")) return false;
+  if (estado.includes("pend")) return false; // excluye pendientes
   return true;
 }
 
@@ -26,22 +27,27 @@ function esIngreso(tx: Transaccion): boolean {
   return normalize(tx.tipoTransaccion).includes("ingreso");
 }
 
+function esDistribucion(tx: Transaccion): boolean {
+  return Boolean(tx.esDistribucionContable);
+}
+
 function sumDistribuido(transacciones: Transaccion[], componente: string) {
   const key = normalize(componente);
-  return transacciones
-    .filter((t) => t.esDistribucionContable)
+  const total = transacciones
+    .filter(esDistribucion)
     .filter((t) => normalize(t.componenteDistribuido) === key)
     .reduce((acc, t) => acc + (t.montoDistribuido ?? 0), 0);
+  return roundMoney(total);
 }
 
 export function calcularDistribucionContable(transacciones: Transaccion[]): DistribucionContable {
   const validas = transacciones.filter(esValida);
-  const ingresos = validas.filter(esIngreso);
-  const distribuciones = validas.filter((t) => t.esDistribucionContable);
+  const ingresos = validas.filter((t) => esIngreso(t) && !esDistribucion(t));
+  const distribuciones = validas.filter(esDistribucion);
 
-  const capitalGenerado = ingresos.reduce((acc, t) => acc + (t.capital ?? 0), 0);
-  const utilidadGenerada = ingresos.reduce((acc, t) => acc + (t.utilidad ?? 0), 0);
-  const ivaGenerado = ingresos.reduce((acc, t) => acc + (t.iva ?? 0), 0);
+  const capitalGenerado = roundMoney(ingresos.reduce((acc, t) => acc + (t.capital ?? 0), 0));
+  const utilidadGenerada = roundMoney(ingresos.reduce((acc, t) => acc + (t.utilidad ?? 0), 0));
+  const ivaGenerado = roundMoney(ingresos.reduce((acc, t) => acc + (t.iva ?? 0), 0));
 
   const capitalDistribuido = sumDistribuido(distribuciones, "capital");
   const utilidadDistribuida = sumDistribuido(distribuciones, "utilidad");
@@ -51,17 +57,17 @@ export function calcularDistribucionContable(transacciones: Transaccion[]): Dist
     capital: {
       generado: capitalGenerado,
       distribuido: capitalDistribuido,
-      pendiente: capitalGenerado - capitalDistribuido,
+      pendiente: roundMoney(capitalGenerado - capitalDistribuido),
     },
     utilidad: {
       generado: utilidadGenerada,
       distribuido: utilidadDistribuida,
-      pendiente: utilidadGenerada - utilidadDistribuida,
+      pendiente: roundMoney(utilidadGenerada - utilidadDistribuida),
     },
     iva: {
       generado: ivaGenerado,
       distribuido: ivaDistribuido,
-      pendiente: ivaGenerado - ivaDistribuido,
+      pendiente: roundMoney(ivaGenerado - ivaDistribuido),
     },
   };
 }

@@ -1,5 +1,10 @@
-import { NextResponse } from "next/server";
-import { createAirtableRecords, fetchAirtableRecords, updateAirtableRecord } from "@/lib/airtable";
+﻿import { NextResponse } from "next/server";
+import {
+  createAirtableRecords,
+  fetchAirtableRecordById,
+  fetchAirtableRecords,
+  updateAirtableRecord,
+} from "@/lib/airtable";
 import { safeNumber } from "@/lib/helpers";
 
 const TIPO_TRANSACCION_VALOR = "Ingreso";
@@ -15,6 +20,10 @@ function pickString(value: unknown): string {
 
 function normalizeDate(value?: string) {
   return value && value.length ? value : new Date().toISOString().slice(0, 10);
+}
+
+function round2(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
 export async function POST(request: Request) {
@@ -40,22 +49,20 @@ export async function POST(request: Request) {
     }
 
     const fechaReal = normalizeDate(body.fechaRealAcreditacion);
-    const comisionReal = safeNumber(body.comisionReal, 0);
-    const montoIngresado = safeNumber(body.montoRealAcreditado, NaN);
+    const comisionReal = Math.max(0, safeNumber(body.comisionReal, 0));
     const obs = body.observaciones ?? "";
 
-    // obtener movimiento
-    const records = await fetchAirtableRecords<Record<string, unknown>>(tablePendientes);
-    const record = records.find((r) => r.id === id);
+    const pendientes = await fetchAirtableRecords<Record<string, unknown>>(tablePendientes);
+    const record = pendientes.find((r) => r.id === id);
     if (!record) {
       return NextResponse.json({ success: false, error: "Movimiento no encontrado" }, { status: 404 });
     }
 
     const f = record.fields ?? {};
-    const medio = pickString(f["Medio"] ?? f["M\u00e9todo de Pago"] ?? "");
+    const medio = pickString(f["Medio"] ?? f["Método de Pago"] ?? "");
     const cuentaDestinoId = pickLinkedId(f["Cuenta Destino Final"]);
-    const transRelacionada = pickLinkedId(f["Transacci\u00f3n Relacionada"]);
-    const montoEsperado = safeNumber(f["Monto Esperado"], 0);
+    const transRelacionadaId = pickLinkedId(f["Transacción Relacionada"]);
+    const montoEsperadoCampo = safeNumber(f["Monto Esperado"], 0);
 
     if (!cuentaDestinoId) {
       return NextResponse.json(
@@ -64,49 +71,66 @@ export async function POST(request: Request) {
       );
     }
 
-    const montoCalculado = Number.isFinite(montoIngresado) && montoIngresado > 0
-      ? montoIngresado
-      : Math.max(montoEsperado - comisionReal, 0);
+    const txRelacionada = transRelacionadaId
+      ? await fetchAirtableRecordById<Record<string, unknown>>(tableTx, transRelacionadaId)
+      : null;
+    const txFields = txRelacionada?.fields ?? {};
 
-    if (montoCalculado <= 0) {
+    const capitalOriginal = round2(safeNumber(f["Capital"], safeNumber(txFields["Capital"], 0)));
+    const utilidadOriginal = round2(safeNumber(f["Utilidad"], safeNumber(txFields["Utilidad"], 0)));
+    const ivaOriginal = round2(safeNumber(f["IVA"], safeNumber(txFields["IVA"], 0)));
+    const montoReferencia = safeNumber(txFields["Monto Total"], 0);
+    const montoEsperado = round2(montoEsperadoCampo || montoReferencia || capitalOriginal + utilidadOriginal + ivaOriginal);
+
+    if (comisionReal > utilidadOriginal) {
+      return NextResponse.json(
+        { success: false, error: "La comisión real no puede ser mayor a la utilidad original." },
+        { status: 400 }
+      );
+    }
+
+    const utilidadNeta = round2(utilidadOriginal - comisionReal);
+    const montoAcreditadoFinal = round2(capitalOriginal + utilidadNeta + ivaOriginal);
+
+    if (montoAcreditadoFinal <= 0 || !Number.isFinite(montoAcreditadoFinal)) {
       return NextResponse.json(
         { success: false, error: "Monto real acreditado debe ser mayor a 0" },
         { status: 400 }
       );
     }
 
-    // actualizar movimiento pendiente
     await updateAirtableRecord(tablePendientes, id, {
       Estado: "Acreditado",
-      "Fecha Real de Acreditaci\u00f3n": fechaReal,
-      "Comisi\u00f3n Real": comisionReal,
-      "Monto Real Acreditado": montoCalculado,
+      "Fecha Real de Acreditación": fechaReal,
+      "Comisión Real": comisionReal,
+      "Monto Real Acreditado": montoAcreditadoFinal,
       Observaciones: obs,
+      "Monto Esperado": montoEsperado,
     });
 
-    // mapear cuentas
     const cuentas = await fetchAirtableRecords<Record<string, unknown>>(tableCuentas);
     const cuentaExiste = cuentas.some((c) => c.id === cuentaDestinoId);
     const cuentaLink = cuentaExiste ? [cuentaDestinoId] : undefined;
 
-    const txFields: Record<string, unknown> = {
+    const txFieldsConfirmacion: Record<string, unknown> = {
       Fecha: fechaReal,
-      "Tipo de Transacci\u00f3n": TIPO_TRANSACCION_VALOR,
-      Concepto: `Acreditaci\u00f3n ${medio}`,
+      "Tipo de Transacción": TIPO_TRANSACCION_VALOR,
+      Concepto: `Acreditación ${medio}`,
       Estado: "Procesada",
       "Cuenta Destino": cuentaLink,
-      "M\u00e9todo de Pago": medio,
-      "Monto Total": montoCalculado,
-      Capital: montoCalculado,
-      Utilidad: 0,
-      IVA: 0,
+      "Método de Pago": medio,
+      "Monto Total": montoAcreditadoFinal,
+      Capital: capitalOriginal,
+      Utilidad: utilidadNeta,
+      IVA: ivaOriginal,
+      Comisión: comisionReal,
       "Repuesto Proveedor Externo": 0,
       "Lleva Factura": false,
-      "Referencia Externa": transRelacionada ?? id,
-      "Descripci\u00f3n / Observaciones": obs,
+      "Referencia Externa": transRelacionadaId ?? id,
+      "Descripción / Observaciones": obs,
     };
 
-    const [txRecord] = await createAirtableRecords(tableTx, [txFields]);
+    const [txRecord] = await createAirtableRecords(tableTx, [txFieldsConfirmacion]);
 
     return NextResponse.json({ success: true, data: { transaccionId: txRecord?.id ?? null } });
   } catch (error) {
@@ -114,3 +138,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
+
+
+

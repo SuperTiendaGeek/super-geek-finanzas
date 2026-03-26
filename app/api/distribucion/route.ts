@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { createAirtableRecords } from "@/lib/airtable";
+import { roundMoney } from "@/lib/helpers";
 import { calcularSaldoCuenta } from "@/lib/calculations";
 import { getCuentas } from "@/services/cuentas";
 import { getTransacciones } from "@/services/transacciones";
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { componente?: string; monto?: number };
     const key = String(body.componente ?? "").toLowerCase();
     const config = COMPONENTES[key];
-    const monto = Number(body.monto ?? 0);
+    const monto = roundMoney(Number(body.monto ?? 0));
 
     if (!config) {
       return NextResponse.json({ success: false, error: "Componente inválido" }, { status: 400 });
@@ -53,14 +54,14 @@ export async function POST(request: Request) {
 
     const transacciones = await getTransacciones();
     const distribucion = calcularDistribucionContable(transacciones);
-    const pendiente = distribucion[key as "capital" | "utilidad" | "iva"].pendiente;
+    const pendiente = roundMoney(distribucion[key as "capital" | "utilidad" | "iva"].pendiente);
 
-    if (monto > pendiente) {
+    if (roundMoney(monto - pendiente) > 0) {
       return NextResponse.json({ success: false, error: "No puedes distribuir más de lo pendiente" }, { status: 400 });
     }
 
-    const saldoIngresos = calcularSaldoCuenta(cuentaOrigen.id, transacciones);
-    if (monto > saldoIngresos) {
+    const saldoIngresos = roundMoney(calcularSaldoCuenta(cuentaOrigen.id, transacciones));
+    if (roundMoney(monto - saldoIngresos) > 0) {
       return NextResponse.json(
         { success: false, error: "Saldo insuficiente en SGINGRESOS", saldoIngresos },
         { status: 400 }

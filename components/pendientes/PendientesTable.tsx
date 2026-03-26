@@ -15,7 +15,6 @@ interface Props {
 type FormState = {
   fechaReal: string;
   comisionReal: string;
-  montoReal: string;
   observaciones: string;
 };
 
@@ -25,7 +24,6 @@ export default function PendientesTable({ pendientes: initial }: Props) {
   const [form, setForm] = useState<FormState>(() => ({
     fechaReal: new Date().toISOString().slice(0, 10),
     comisionReal: "0",
-    montoReal: "",
     observaciones: "",
   }));
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -46,20 +44,21 @@ export default function PendientesTable({ pendientes: initial }: Props) {
 
   const selected = useMemo(() => pendientes.find((p) => p.id === selectedId) || null, [pendientes, selectedId]);
   const montoEsperado = selected?.montoEsperado ?? 0;
-
-  const setComisionAndAutoMonto = (value: string) => {
-    const comision = Number(value) || 0;
-    const autoMonto = Math.max(montoEsperado - comision, 0);
-    setForm((prev) => ({
-      ...prev,
-      comisionReal: value,
-      montoReal: prev.montoReal === "" ? String(autoMonto) : String(autoMonto),
-    }));
-  };
+  const capitalOriginal = selected?.capital ?? 0;
+  const utilidadOriginal = selected?.utilidad ?? 0;
+  const ivaOriginal = selected?.iva ?? 0;
+  const comisionIngresada = Number(form.comisionReal || 0);
+  const utilidadNeta = Math.max(utilidadOriginal - comisionIngresada, 0);
+  const montoAcreditado = capitalOriginal + utilidadNeta + ivaOriginal;
+  const comisionExcede = comisionIngresada > utilidadOriginal;
 
   const onConfirm = async (id: string) => {
-    const target = pendientes.find((p) => p.id === id);
-    if (!target) return;
+    if (!selected || !id) return;
+    if (comisionExcede) {
+      setMessage("La comisión no puede ser mayor a la utilidad original.");
+      return;
+    }
+
     setLoadingId(id);
     setMessage("");
     try {
@@ -69,8 +68,8 @@ export default function PendientesTable({ pendientes: initial }: Props) {
         body: JSON.stringify({
           id,
           fechaRealAcreditacion: form.fechaReal,
-          comisionReal: Number(form.comisionReal || 0),
-          montoRealAcreditado: Number(form.montoReal || target.montoEsperado),
+          comisionReal: comisionIngresada,
+          montoRealAcreditado: montoAcreditado,
           observaciones: form.observaciones,
         }),
       });
@@ -90,15 +89,13 @@ export default function PendientesTable({ pendientes: initial }: Props) {
 
   const openForm = (p: Pendiente) => {
     setSelectedId(p.id);
-    const baseMonto = p.montoEsperado ?? 0;
-    const baseComision = 0;
-    const autoMonto = Math.max(baseMonto - baseComision, 0);
+    const baseComision = Number(p.comisionReal ?? p.comisionEstimada ?? 0) || 0;
     setForm({
       fechaReal: new Date().toISOString().slice(0, 10),
       comisionReal: String(baseComision),
-      montoReal: String(autoMonto),
       observaciones: p.observaciones ?? "",
     });
+    setMessage("");
   };
 
   if (!pendientes.length) {
@@ -186,31 +183,49 @@ export default function PendientesTable({ pendientes: initial }: Props) {
                   step="0.01"
                   className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
                   value={form.comisionReal}
-                  onChange={(e) => setComisionAndAutoMonto(e.target.value)}
+                  onChange={(e) => setForm((prev) => ({ ...prev, comisionReal: e.target.value }))}
                 />
-              </label>
-              <label className="text-sm font-medium text-slate-700">
-                Monto real acreditado
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
-                  value={form.montoReal}
-                  onChange={(e) => setForm((prev) => ({ ...prev, montoReal: e.target.value }))}
-                />
-                <p className="text-xs text-slate-500">Auto = Monto Esperado - Comisión Real</p>
-              </label>
-              <label className="text-sm font-medium text-slate-700">
-                Observaciones
-                <input
-                  type="text"
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
-                  value={form.observaciones}
-                  onChange={(e) => setForm((prev) => ({ ...prev, observaciones: e.target.value }))}
-                />
+                {comisionExcede ? (
+                  <p className="text-xs text-red-600">No puede superar la utilidad original.</p>
+                ) : (
+                  <p className="text-xs text-slate-500">Solo descuenta de la utilidad.</p>
+                )}
               </label>
             </div>
+
+            <label className="mt-3 block text-sm font-medium text-slate-700">
+              Observaciones
+              <input
+                type="text"
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+                value={form.observaciones}
+                onChange={(e) => setForm((prev) => ({ ...prev, observaciones: e.target.value }))}
+              />
+            </label>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Capital original</p>
+                <p className="text-sm font-semibold text-slate-900">{formatCurrency(capitalOriginal)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Utilidad original</p>
+                <p className="text-sm font-semibold text-slate-900">{formatCurrency(utilidadOriginal)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">IVA original</p>
+                <p className="text-sm font-semibold text-slate-900">{formatCurrency(ivaOriginal)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Utilidad neta resultante</p>
+                <p className="text-sm font-semibold text-slate-900">{formatCurrency(utilidadNeta)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 sm:col-span-2 lg:col-span-1">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Monto a acreditar</p>
+                <p className="text-sm font-semibold text-slate-900">{formatCurrency(montoAcreditado)}</p>
+              </div>
+            </div>
+
             <div className="mt-3 flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setSelectedId(null)} disabled={loadingId !== null} className="px-4 py-2 text-sm">
                 Cancelar
@@ -234,12 +249,28 @@ export default function PendientesTable({ pendientes: initial }: Props) {
                 <span className="font-semibold text-slate-900">{formatCurrency(montoEsperado)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Comisión real</span>
-                <span className="font-semibold text-slate-900">{formatCurrency(Number(form.comisionReal || 0))}</span>
+                <span>Capital original</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(capitalOriginal)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Monto real</span>
-                <span className="font-semibold text-slate-900">{formatCurrency(Number(form.montoReal || 0))}</span>
+                <span>Utilidad original</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(utilidadOriginal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>IVA original</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(ivaOriginal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Comisión real</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(comisionIngresada)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Utilidad neta</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(utilidadNeta)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Monto a acreditar</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(montoAcreditado)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Cuenta destino</span>
@@ -252,3 +283,4 @@ export default function PendientesTable({ pendientes: initial }: Props) {
     </Card>
   );
 }
+

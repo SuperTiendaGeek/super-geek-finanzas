@@ -98,6 +98,22 @@ function round2(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function splitRubrosProporcional(
+  montoParcial: number,
+  montoTotal: number,
+  rubros: { capital: number; utilidad: number; iva: number }
+) {
+  if (montoTotal <= 0) {
+    return { capital: 0, utilidad: 0, iva: 0 };
+  }
+  const ratio = montoParcial / montoTotal;
+  return {
+    capital: round2(rubros.capital * ratio),
+    utilidad: round2(rubros.utilidad * ratio),
+    iva: round2(rubros.iva * ratio),
+  };
+}
+
 async function buildCuentasIndex(table: string) {
   const records = await fetchAirtableRecords<Record<string, unknown>>(table);
   const map: Record<string, string> = {};
@@ -405,3 +421,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
+
+
+
+
+
+
+
+

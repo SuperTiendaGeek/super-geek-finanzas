@@ -7,6 +7,9 @@ export interface Pendiente {
   fecha: ISODateString;
   fechaEstimada?: ISODateString | null;
   montoEsperado: number;
+  capital: number;
+  utilidad: number;
+  iva: number;
   comisionEstimada?: number | null;
   comisionReal?: number | null;
   montoRealAcreditado?: number | null;
@@ -15,3 +18,4 @@ export interface Pendiente {
   cuentaDestinoFinalNombre?: string | null;
   observaciones?: string | null;
 }
+

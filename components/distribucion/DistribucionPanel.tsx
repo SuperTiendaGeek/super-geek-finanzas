@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import { DEFAULT_CURRENCY } from "@/lib/constants";
-import { formatCurrency } from "@/lib/helpers";
+import { formatCurrency, roundMoney } from "@/lib/helpers";
 import type { DistribucionContable } from "@/services/distribucion";
 
 type Props = {
@@ -32,15 +32,18 @@ export default function DistribucionPanel({ distribucion, saldoIngresos, currenc
 
   const pendientes = useMemo(
     () => ({
-      capital: distribucion.capital.pendiente,
-      utilidad: distribucion.utilidad.pendiente,
-      iva: distribucion.iva.pendiente,
+      capital: roundMoney(distribucion.capital.pendiente),
+      utilidad: roundMoney(distribucion.utilidad.pendiente),
+      iva: roundMoney(distribucion.iva.pendiente),
     }),
     [distribucion]
   );
 
+  const saldo = roundMoney(saldoIngresos);
+
   const handleSubmit = async (key: ComponenteKey, montoSolicitado?: number) => {
-    const monto = montoSolicitado ?? Number(montos[key] || 0);
+    const parsed = montoSolicitado ?? Number(montos[key] || 0);
+    const monto = roundMoney(parsed);
     const pendiente = pendientes[key];
     setMensaje(null);
 
@@ -49,12 +52,12 @@ export default function DistribucionPanel({ distribucion, saldoIngresos, currenc
       return;
     }
 
-    if (monto > pendiente) {
+    if (roundMoney(monto - pendiente) > 0) {
       setMensaje({ type: "error", text: "No puedes distribuir más de lo pendiente" });
       return;
     }
 
-    if (monto > saldoIngresos) {
+    if (roundMoney(monto - saldo) > 0) {
       setMensaje({ type: "error", text: "Saldo insuficiente en SGINGRESOS" });
       return;
     }
@@ -101,13 +104,13 @@ export default function DistribucionPanel({ distribucion, saldoIngresos, currenc
               <div className="space-y-2 text-sm text-slate-700">
                 <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
                 <p>
-                  Generado: <span className="font-semibold text-slate-900">{formatCurrency(data.generado, currency)}</span>
+                  Generado: <span className="font-semibold text-slate-900">{formatCurrency(roundMoney(data.generado), currency)}</span>
                 </p>
                 <p>
-                  Distribuido: <span className="font-semibold text-slate-900">{formatCurrency(data.distribuido, currency)}</span>
+                  Distribuido: <span className="font-semibold text-slate-900">{formatCurrency(roundMoney(data.distribuido), currency)}</span>
                 </p>
                 <p>
-                  Pendiente: <span className="font-semibold text-slate-900">{formatCurrency(data.pendiente, currency)}</span>
+                  Pendiente: <span className="font-semibold text-slate-900">{formatCurrency(pendiente, currency)}</span>
                 </p>
 
                 <div className="space-y-2 pt-2">
@@ -118,7 +121,7 @@ export default function DistribucionPanel({ distribucion, saldoIngresos, currenc
                       step="0.01"
                       min={0}
                       value={montos[key]}
-                      placeholder={pendiente.toString()}
+                      placeholder={pendiente.toFixed(2)}
                       onChange={(e) => setMontos((prev) => ({ ...prev, [key]: e.target.value }))}
                       className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
                     />
@@ -146,7 +149,7 @@ export default function DistribucionPanel({ distribucion, saldoIngresos, currenc
           );
         })}
       </div>
-      <p className="text-xs text-slate-500">Saldo disponible en SGINGRESOS: {formatCurrency(saldoIngresos, currency)}</p>
+      <p className="text-xs text-slate-500">Saldo disponible en SGINGRESOS: {formatCurrency(saldo, currency)}</p>
     </div>
   );
 }
