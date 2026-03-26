@@ -7,8 +7,6 @@ import {
 } from "@/lib/airtable";
 import { safeNumber } from "@/lib/helpers";
 
-const TIPO_TRANSACCION_VALOR = "Ingreso";
-
 function pickLinkedId(value: unknown): string | null {
   if (Array.isArray(value)) return (value[0] as string | undefined) ?? null;
   return (value as string | undefined) ?? null;
@@ -89,7 +87,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const utilidadNeta = round2(utilidadOriginal - comisionReal);
+    const utilidadNeta = round2(Math.max(0, utilidadOriginal - comisionReal));
     const montoAcreditadoFinal = round2(capitalOriginal + utilidadNeta + ivaOriginal);
 
     if (montoAcreditadoFinal <= 0 || !Number.isFinite(montoAcreditadoFinal)) {
@@ -108,22 +106,33 @@ export async function POST(request: Request) {
       "Monto Esperado": montoEsperado,
     });
 
+    if (transRelacionadaId) {
+      await updateAirtableRecord(tableTx, transRelacionadaId, {
+        Estado: "Procesada",
+        Capital: capitalOriginal,
+        Utilidad: utilidadNeta,
+        IVA: ivaOriginal,
+        Comisión: comisionReal,
+      });
+    }
+
     const cuentas = await fetchAirtableRecords<Record<string, unknown>>(tableCuentas);
     const cuentaExiste = cuentas.some((c) => c.id === cuentaDestinoId);
     const cuentaLink = cuentaExiste ? [cuentaDestinoId] : undefined;
 
     const txFieldsConfirmacion: Record<string, unknown> = {
       Fecha: fechaReal,
-      "Tipo de Transacción": TIPO_TRANSACCION_VALOR,
+      "Tipo de Transacción": "Movimiento",
+      "Tipo de Flujo": "Acreditación pendiente",
       Concepto: `Acreditación ${medio}`,
-      Estado: "Procesada",
+      Estado: "Confirmado",
       "Cuenta Destino": cuentaLink,
       "Método de Pago": medio,
       "Monto Total": montoAcreditadoFinal,
-      Capital: capitalOriginal,
-      Utilidad: utilidadNeta,
-      IVA: ivaOriginal,
       Comisión: comisionReal,
+      Capital: 0,
+      Utilidad: 0,
+      IVA: 0,
       "Repuesto Proveedor Externo": 0,
       "Lleva Factura": false,
       "Referencia Externa": transRelacionadaId ?? id,
@@ -138,6 +147,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
-
-
-

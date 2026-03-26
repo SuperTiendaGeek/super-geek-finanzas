@@ -43,6 +43,12 @@ function isEgreso(tx: Transaccion) {
   return normalize(tx.tipoTransaccion).includes("egreso");
 }
 
+function isAcreditacion(tx: Transaccion) {
+  return normalize(tx.tipoFlujo).includes("acredit");
+}
+
+const PENDING_METHODS = ["datafast", "payphone", "paypal", "mixto"];
+
 function sumAmounts(list: Transaccion[], predicate: (t: Transaccion) => boolean) {
   return list.filter(predicate).reduce((acc, t) => acc + (t.montoTotal || 0), 0);
 }
@@ -78,7 +84,15 @@ export default async function DashboardPage() {
   const cuentasActivas = cuentas.filter((c) => c.activa);
   const saldosActivos = cuentasActivas.reduce((acc, c) => acc + (saldos[c.id] ?? 0), 0);
 
-  const ingresosMes = sumAmounts(transacciones, (t) => isConfirmed(t) && isIngreso(t) && inCurrentMonth(t.fecha));
+  const ingresosMes = sumAmounts(transacciones, (t) => {
+    if (!isConfirmed(t) || !inCurrentMonth(t.fecha) || t.esDistribucionContable) return false;
+    const metodo = normalize(t.metodoPago);
+    const esPendienteMedio = PENDING_METHODS.includes(metodo);
+    if (isAcreditacion(t)) return true; // neto acreditado
+    if (isIngreso(t) && !esPendienteMedio) return true; // ingresos directos
+    return false;
+  });
+
   const egresosMes = sumAmounts(transacciones, (t) => isConfirmed(t) && isEgreso(t) && inCurrentMonth(t.fecha));
   const pendientePorAcreditar = pendientes.reduce((acc, p) => acc + (p.montoEsperado ?? 0), 0);
 
@@ -156,5 +170,3 @@ export default async function DashboardPage() {
     </PageContainer>
   );
 }
-
-

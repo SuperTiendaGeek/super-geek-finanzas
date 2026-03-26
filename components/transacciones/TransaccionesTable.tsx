@@ -10,19 +10,21 @@ import { formatCurrency, formatDate } from "@/lib/helpers";
 interface Props {
   transacciones: Transaccion[];
   currency?: string;
+  pendientesTotal?: number;
 }
 
 type QuickRange = "custom" | "today" | "week" | "month";
+type QuickFilter = "todas" | "reales" | "internos" | "ventas" | "acreditaciones" | "distribuciones";
+
+const PENDING_METHODS = ["datafast", "payphone", "paypal", "mixto"];
 
 function quickRangeDates(range: QuickRange) {
   const now = new Date();
   const iso = (d: Date) => d.toISOString().slice(0, 10);
-  if (range === "today") {
-    return { from: iso(now), to: iso(now) };
-  }
+  if (range === "today") return { from: iso(now), to: iso(now) };
   if (range === "week") {
     const day = now.getDay();
-    const diff = day === 0 ? 6 : day - 1; // Monday start
+    const diff = day === 0 ? 6 : day - 1;
     const start = new Date(now);
     start.setDate(now.getDate() - diff);
     return { from: iso(start), to: iso(now) };
@@ -34,7 +36,57 @@ function quickRangeDates(range: QuickRange) {
   return { from: "", to: "" };
 }
 
-export default function TransaccionesTable({ transacciones, currency = "USD" }: Props) {
+const normalize = (v?: string | null) => (v ?? "").toLowerCase();
+
+function isPending(tx: Transaccion) {
+  return normalize(tx.estado).includes("pend");
+}
+function isCanceled(tx: Transaccion) {
+  const e = normalize(tx.estado);
+  return e.includes("anul") || e.includes("cancel");
+}
+function isConfirmed(tx: Transaccion) {
+  const e = normalize(tx.estado);
+  if (!e) return true;
+  return !isPending(tx) && !isCanceled(tx);
+}
+function isIngreso(tx: Transaccion) {
+  return normalize(tx.tipoTransaccion).includes("ingreso");
+}
+function isEgreso(tx: Transaccion) {
+  return normalize(tx.tipoTransaccion).includes("egreso");
+}
+function isAcreditacion(tx: Transaccion) {
+  return normalize(tx.tipoFlujo).includes("acredit");
+}
+function isDistribucion(tx: Transaccion) {
+  return Boolean(tx.esDistribucionContable);
+}
+function isTransferenciaInterna(tx: Transaccion) {
+  return normalize(tx.tipoFlujo).includes("transferencia interna");
+}
+function isInterno(tx: Transaccion) {
+  return isDistribucion(tx) || isTransferenciaInterna(tx);
+}
+function isVenta(tx: Transaccion) {
+  return isIngreso(tx) && !isAcreditacion(tx) && !isInterno(tx);
+}
+function isIngresoDirectoDisponible(tx: Transaccion) {
+  const metodo = normalize(tx.metodoPago);
+  const esPendienteMedio = PENDING_METHODS.includes(metodo);
+  return isVenta(tx) && !esPendienteMedio && isConfirmed(tx);
+}
+
+function classify(tx: Transaccion): string {
+  if (isAcreditacion(tx)) return "Acreditación";
+  if (isDistribucion(tx)) return "Distribución interna";
+  if (isTransferenciaInterna(tx)) return "Transferencia interna";
+  if (isEgreso(tx)) return "Egreso";
+  if (isVenta(tx)) return "Venta";
+  return "Otro";
+}
+
+export default function TransaccionesTable({ transacciones, currency = "USD", pendientesTotal = 0 }: Props) {
   const [searchRef, setSearchRef] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -44,6 +96,7 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
   const [metodoFilter, setMetodoFilter] = useState("");
   const [cuentaFilter, setCuentaFilter] = useState("");
   const [quickRange, setQuickRange] = useState<QuickRange>("custom");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("todas");
 
   const tipos = useMemo(() => Array.from(new Set(transacciones.map((t) => t.tipoTransaccion || ""))).filter(Boolean), [transacciones]);
   const conceptos = useMemo(() => Array.from(new Set(transacciones.map((t) => t.concepto || ""))).filter(Boolean), [transacciones]);
@@ -60,6 +113,12 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
 
   const filtered = useMemo(() => {
     return transacciones.filter((tx) => {
+      if (quickFilter === "reales" && isInterno(tx)) return false;
+      if (quickFilter === "internos" && !isInterno(tx)) return false;
+      if (quickFilter === "ventas" && classify(tx) !== "Venta") return false;
+      if (quickFilter === "acreditaciones" && classify(tx) !== "Acreditación") return false;
+      if (quickFilter === "distribuciones" && classify(tx) !== "Distribución interna") return false;
+
       if (searchRef && !(tx.referenciaExterna ?? "").toLowerCase().includes(searchRef.toLowerCase())) return false;
       if (tipoFilter && tx.tipoTransaccion !== tipoFilter) return false;
       if (conceptoFilter && tx.concepto !== conceptoFilter) return false;
@@ -70,17 +129,26 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
       if (dateTo && new Date(tx.fecha) > new Date(dateTo)) return false;
       return true;
     });
-  }, [transacciones, searchRef, tipoFilter, conceptoFilter, estadoFilter, metodoFilter, cuentaFilter, dateFrom, dateTo]);
+  }, [transacciones, searchRef, tipoFilter, conceptoFilter, estadoFilter, metodoFilter, cuentaFilter, dateFrom, dateTo, quickFilter]);
 
-  const totalMonto = filtered.reduce((acc, t) => acc + (t.montoTotal || 0), 0);
-  const totalIngresos = filtered.filter((t) => t.tipoTransaccion === "Ingreso").reduce((acc, t) => acc + (t.montoTotal || 0), 0);
-  const totalEgresos = filtered.filter((t) => t.tipoTransaccion === "Egreso").reduce((acc, t) => acc + (t.montoTotal || 0), 0);
-  const totalPendientes = filtered.filter((t) => (t.estado ?? "").toLowerCase().includes("pendiente"));
+  // Tarjetas (sobre el subconjunto filtrado, excepto Pendiente por acreditar que usa fuente de pendientes)
+  const ventasBrutas = filtered.filter(isVenta).reduce((acc, t) => acc + (t.montoTotal || 0), 0);
+  const ingresosReales = filtered
+    .filter((t) => isAcreditacion(t) || isIngresoDirectoDisponible(t))
+    .reduce((acc, t) => acc + (t.montoTotal || 0), 0);
+  const comisiones = filtered.filter(isAcreditacion).reduce((acc, t) => acc + (t.comision || 0), 0);
+  const movimientosInternos = filtered.filter(isInterno).length;
+
+  const totalPendientes = pendientesTotal; // ya viene desde la tabla de pendientes
 
   const tipoBadge = (tipo: string) => {
-    if (tipo === "Ingreso") return "bg-emerald-50 text-emerald-700 border border-emerald-100";
-    if (tipo === "Egreso") return "bg-rose-50 text-rose-700 border border-rose-100";
-    return "bg-indigo-50 text-indigo-700 border border-indigo-100";
+    const t = tipo.toLowerCase();
+    if (t === "venta") return "bg-emerald-50 text-emerald-700 border border-emerald-100";
+    if (t === "acreditación") return "bg-blue-50 text-blue-700 border border-blue-100";
+    if (t === "distribución interna") return "bg-indigo-50 text-indigo-700 border border-indigo-100";
+    if (t === "transferencia interna") return "bg-slate-50 text-slate-700 border border-slate-200";
+    if (t === "egreso") return "bg-rose-50 text-rose-700 border border-rose-100";
+    return "bg-slate-50 text-slate-700 border border-slate-200";
   };
 
   const estadoBadge = (estado: string) => {
@@ -102,6 +170,7 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
     setMetodoFilter("");
     setCuentaFilter("");
     setQuickRange("custom");
+    setQuickFilter("todas");
   };
 
   const applyQuickRange = (range: QuickRange) => {
@@ -115,6 +184,7 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
     const headersCsv = [
       "Fecha",
       "ID",
+      "Clasificación",
       "Tipo",
       "Concepto",
       "Origen",
@@ -126,6 +196,7 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
     const rows = filtered.map((tx) => [
       formatDate(tx.fecha),
       tx.idTransaccion ?? tx.id,
+      classify(tx),
       tx.tipoTransaccion || "",
       tx.concepto || "",
       tx.cuentaOrigen ?? "",
@@ -149,11 +220,11 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <StatCard label="Total transacciones" value={filtered.length} currency="" tone="neutral" />
-        <StatCard label="Total ingresos" value={totalIngresos} currency={currency} tone="green" />
-        <StatCard label="Total egresos" value={totalEgresos} currency={currency} tone="red" />
-        <StatCard label="Pendientes" value={totalPendientes.length} currency="" tone="amber" />
-        <StatCard label="Monto total movido" value={totalMonto} currency={currency} tone="indigo" />
+        <StatCard label="Ventas brutas" value={ventasBrutas} currency={currency} tone="green" />
+        <StatCard label="Ingresos reales acreditados" value={ingresosReales} currency={currency} tone="emerald" />
+        <StatCard label="Comisiones del período" value={comisiones} currency={currency} tone="amber" />
+        <StatCard label="Pendiente por acreditar" value={totalPendientes} currency={currency} tone="orange" />
+        <StatCard label="Movimientos internos" value={movimientosInternos} currency="" tone="indigo" />
       </div>
 
       <Card>
@@ -231,6 +302,19 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
             </div>
           </div>
 
+          <div className="flex flex-wrap gap-2">
+            {(["todas","reales","internos","ventas","acreditaciones","distribuciones"] as QuickFilter[]).map((q) => (
+              <Button
+                key={q}
+                size="sm"
+                variant={quickFilter === q ? "primary" : "ghost"}
+                onClick={() => setQuickFilter(q)}
+              >
+                {q.charAt(0).toUpperCase() + q.slice(1)}
+              </Button>
+            ))}
+          </div>
+
           <div className="flex flex-wrap gap-2 text-xs text-slate-600">
             {searchRef ? <span className="chip">Ref: {searchRef}</span> : null}
             {tipoFilter ? <span className="chip">Tipo: {tipoFilter}</span> : null}
@@ -241,6 +325,7 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
             {dateFrom ? <span className="chip">Desde: {formatDate(dateFrom)}</span> : null}
             {dateTo ? <span className="chip">Hasta: {formatDate(dateTo)}</span> : null}
             {quickRange !== "custom" ? <span className="chip">Rango rápido: {quickRange}</span> : null}
+            {quickFilter !== "todas" ? <span className="chip">Filtro: {quickFilter}</span> : null}
           </div>
         </div>
       </Card>
@@ -252,6 +337,7 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
               <tr className="border-b border-slate-100">
                 <th className="px-3 py-2 text-left">Fecha</th>
                 <th className="px-3 py-2 text-left">ID</th>
+                <th className="px-3 py-2 text-left">Clasificación</th>
                 <th className="px-3 py-2 text-left">Tipo</th>
                 <th className="px-3 py-2 text-left">Concepto</th>
                 <th className="px-3 py-2 text-left">Origen</th>
@@ -262,29 +348,33 @@ export default function TransaccionesTable({ transacciones, currency = "USD" }: 
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((txn) => (
-                <tr key={txn.id} className="hover:bg-slate-50">
-                  <td className="px-3 py-2 whitespace-nowrap text-left">{formatDate(txn.fecha)}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-left">{txn.idTransaccion ?? txn.id}</td>
-                  <td className="px-3 py-2 text-left">
-                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${tipoBadge(txn.tipoTransaccion)}`}>
-                      {txn.tipoTransaccion || "-"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-left">{txn.concepto || "-"}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-left">{txn.cuentaOrigen || "-"}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-left">{txn.cuentaDestino || "-"}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-left">{txn.metodoPago || "-"}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-right font-semibold">
-                    {formatCurrency(txn.montoTotal || 0, currency)}
-                  </td>
-                  <td className="px-3 py-2 text-left">
-                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${estadoBadge(txn.estado)}`}>
-                      {txn.estado || "-"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((txn) => {
+                const clasif = classify(txn);
+                return (
+                  <tr key={txn.id} className="hover:bg-slate-50">
+                    <td className="px-3 py-2 whitespace-nowrap text-left">{formatDate(txn.fecha)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-left">{txn.idTransaccion ?? txn.id}</td>
+                    <td className="px-3 py-2 text-left">
+                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${tipoBadge(clasif)}`}>
+                        {clasif}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-left">{txn.tipoTransaccion || "-"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-left">{txn.concepto || "-"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-left">{txn.cuentaOrigen || "-"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-left">{txn.cuentaDestino || "-"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-left">{txn.metodoPago || "-"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right font-semibold">
+                      {formatCurrency(txn.montoTotal || 0, currency)}
+                    </td>
+                    <td className="px-3 py-2 text-left">
+                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${estadoBadge(txn.estado)}`}>
+                        {txn.estado || "-"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
