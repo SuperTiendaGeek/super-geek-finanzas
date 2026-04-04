@@ -1,9 +1,11 @@
 ﻿import type { ButtonHTMLAttributes } from "react";
 
 const variantStyles: Record<string, string> = {
-  primary: "bg-slate-900 text-white hover:bg-slate-800 focus:ring-2 focus:ring-slate-400",
-  secondary: "bg-white text-slate-900 border border-slate-200 hover:border-slate-300",
-  ghost: "bg-transparent text-slate-700 hover:bg-slate-100",
+  primary:
+    "bg-[var(--btn-primary-bg)] text-[var(--btn-primary-text)] hover:bg-[var(--btn-primary-bg-hover)] focus:ring-2 focus:ring-[var(--btn-primary-ring)]",
+  secondary:
+    "bg-[var(--btn-secondary-bg)] text-[var(--btn-secondary-text)] border border-[color:var(--border)] hover:border-[color:var(--border-strong)]",
+  ghost: "bg-transparent text-[var(--text-primary)] hover:bg-[var(--surface-muted)]",
 };
 
 type ButtonSize = "sm" | "md";

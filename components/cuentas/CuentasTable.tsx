@@ -175,7 +175,7 @@ export default function CuentasTable({ cuentas, currencyFallback = "USD" }: Prop
             <button
               type="button"
               onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-              className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              className="rounded-md border border-[color:var(--border)] px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-[var(--surface-muted)]"
             >
               {sortDir === "asc" ? "Asc" : "Desc"}
             </button>
@@ -207,7 +207,7 @@ export default function CuentasTable({ cuentas, currencyFallback = "USD" }: Prop
                 const tipoClass = tipoBadge(cuenta.tipoCuenta);
 
                 return (
-                  <tr key={cuenta.id} className="hover:bg-slate-50">
+                  <tr key={cuenta.id} className="row hoverable">
                     <td className="px-3 py-2">
                       <div className="space-y-0.5">
                         <p className="font-semibold text-slate-900">{cuenta.nombre}</p>
@@ -231,7 +231,7 @@ export default function CuentasTable({ cuentas, currencyFallback = "USD" }: Prop
                     <td className="px-3 py-2 whitespace-nowrap">
                       <Link
                         href={`/cuentas/${encodeURIComponent(cuenta.id)}`}
-                        className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100"
+                        className="rounded-md border border-[color:var(--border)] px-3 py-1.5 text-sm text-[var(--text-primary)] transition hover:bg-[var(--surface-muted)]"
                       >
                         Ver detalle
                       </Link>

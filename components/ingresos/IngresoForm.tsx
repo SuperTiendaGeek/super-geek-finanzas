@@ -205,7 +205,7 @@ export default function IngresoForm() {
       };
     }
     const monto = safeNumber(montosVenta.montoTotal || montosReparacion.totalReparacion, 0);
-    return { capital: monto, utilidad: 0, iva: 0, repuestoExterno: 0, total: monto };
+    return { capital: 0, utilidad: 0, iva: 0, repuestoExterno: 0, total: monto };
   }, [concepto, montosVenta, montosReparacion, ventaNumeros, reparacionNumeros]);
 
   const totalIngreso = useMemo(() => {
@@ -246,6 +246,19 @@ export default function IngresoForm() {
     }
   };
 
+  const isConceptoOtro = concepto === "otro";
+  const metodosVisibles = useMemo(() => {
+    if (isConceptoOtro) return metodoPagoOptions.filter((o) => ["efectivo", "transferencia"].includes(o.value));
+    return metodoPagoOptions;
+  }, [isConceptoOtro]);
+
+  useEffect(() => {
+    if (isConceptoOtro && !["efectivo", "transferencia"].includes(metodoPago)) {
+      setMetodoPago("efectivo");
+      setPagosMixtos([{ id: "pago-1", metodo: "efectivo", monto: "" }]);
+    }
+  }, [isConceptoOtro, metodoPago]);
+
   const handleSubmit = async () => {
     if (concepto === "venta" && Math.abs(ventaDiff) > 0.009) {
       setStatus({ type: "error", message: "El total de la venta no cuadra con capital + utilidad + IVA." });
@@ -264,10 +277,26 @@ export default function IngresoForm() {
       setIsSubmitting(true);
       setStatus({ type: "idle" });
 
+      const payloadBody =
+        concepto === "otro"
+          ? {
+              concepto,
+              fecha,
+              metodoPago,
+              referencia,
+              observaciones,
+              llevaFactura: false,
+              montosVenta: { montoTotal: montosVenta.montoTotal, capital: "0", utilidad: "0", iva: "0" },
+              montosReparacion: undefined,
+              pagosMixtos: [],
+              totalIngreso,
+            }
+          : { concepto, fecha, metodoPago, referencia, observaciones, llevaFactura, montosVenta, montosReparacion, pagosMixtos, totalIngreso };
+
       const response = await fetch("/api/ingresos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ concepto, fecha, metodoPago, referencia, observaciones, llevaFactura, montosVenta, montosReparacion, pagosMixtos, totalIngreso }),
+        body: JSON.stringify(payloadBody),
       });
 
       const payload = (await response.json()) as { success?: boolean; error?: string; data?: Record<string, unknown> };
@@ -313,7 +342,7 @@ export default function IngresoForm() {
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Metodo de pago</p>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-              {metodoPagoOptions.map((option) => (
+              {metodosVisibles.map((option) => (
                 <button
                   key={option.value}
                   type="button"
@@ -355,10 +384,8 @@ export default function IngresoForm() {
         </div>
       </Section>
 
-      <Section title="Metodo de pago mixto" description={metodoPago === "mixto" ? "Distribuye el cobro" : ""}>
-        {metodoPago !== "mixto" ? (
-          <p className="text-sm text-slate-600">Selecciona "Mixto" para dividir entre varios metodos.</p>
-        ) : (
+      {metodoPago === "mixto" && !isConceptoOtro ? (
+        <Section title="Metodo de pago mixto" description="Distribuye el cobro">
           <div className="space-y-3">
             {pagosMixtos.map((pago) => {
               const meta = cuentaYEstadoPorMetodo(pago.metodo);
@@ -387,7 +414,7 @@ export default function IngresoForm() {
                   </Field>
 
                   <div className="flex items-end justify-end">
-                    <Button type="button" variant="ghost" className="text-sm text-slate-600 hover:bg-slate-100" onClick={() => handleEliminarPago(pago.id)} disabled={pagosMixtos.length <= 1}>
+                    <Button type="button" variant="ghost" className="text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-muted)]" onClick={() => handleEliminarPago(pago.id)} disabled={pagosMixtos.length <= 1}>
                       Eliminar
                     </Button>
                   </div>
@@ -405,8 +432,8 @@ export default function IngresoForm() {
               </div>
             </div>
           </div>
-        )}
-      </Section>
+        </Section>
+      ) : null}
 
       <Section title="Montos" description="Captura y revisa que los totales cuadren">
         {concepto === "venta" && (
@@ -486,28 +513,32 @@ export default function IngresoForm() {
               <p className="text-sm font-medium text-slate-700">Distribucion contable esperada</p>
               <Badge className="bg-slate-100 text-slate-700">Preview</Badge>
             </div>
-            <dl className="mt-3 grid grid-cols-2 gap-2 text-sm text-slate-700">
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                <dt>Capital</dt>
-                <dd className="font-semibold text-slate-900">{formatCurrency(distribucion.capital)}</dd>
-              </div>
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                <dt>Utilidad</dt>
-                <dd className="font-semibold text-slate-900">{formatCurrency(distribucion.utilidad)}</dd>
-              </div>
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                <dt>IVA</dt>
-                <dd className="font-semibold text-slate-900">{formatCurrency(distribucion.iva)}</dd>
-              </div>
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                <dt>Repuesto externo</dt>
-                <dd className="font-semibold text-slate-900">{formatCurrency(distribucion.repuestoExterno)}</dd>
-              </div>
-              <div className="col-span-2 flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-900">
-                <dt>Total</dt>
-                <dd>{formatCurrency(distribucion.total)}</dd>
-              </div>
-            </dl>
+            {isConceptoOtro ? (
+              <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">No aplica para "Otro ingreso".</div>
+            ) : (
+              <dl className="mt-3 grid grid-cols-2 gap-2 text-sm text-slate-700">
+                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                  <dt>Capital</dt>
+                  <dd className="font-semibold text-slate-900">{formatCurrency(distribucion.capital)}</dd>
+                </div>
+                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                  <dt>Utilidad</dt>
+                  <dd className="font-semibold text-slate-900">{formatCurrency(distribucion.utilidad)}</dd>
+                </div>
+                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                  <dt>IVA</dt>
+                  <dd className="font-semibold text-slate-900">{formatCurrency(distribucion.iva)}</dd>
+                </div>
+                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                  <dt>Repuesto externo</dt>
+                  <dd className="font-semibold text-slate-900">{formatCurrency(distribucion.repuestoExterno)}</dd>
+                </div>
+                <div className="col-span-2 flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-900">
+                  <dt>Total</dt>
+                  <dd>{formatCurrency(distribucion.total)}</dd>
+                </div>
+              </dl>
+            )}
           </Card>
         </div>
       </Section>

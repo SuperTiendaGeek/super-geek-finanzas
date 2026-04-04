@@ -1,4 +1,4 @@
-﻿import { fetchAirtableRecords } from "@/lib/airtable";
+import { fetchAirtableRecordById, fetchAirtableRecords } from "@/lib/airtable";
 import { Transaccion } from "@/types/transaccion";
 
 const FIELD_TIPO_TRANSACCION = "Tipo de Transacción";
@@ -23,6 +23,12 @@ const FIELD_ESTADO = "Estado";
 const FIELD_ES_DISTRIBUCION = "Es Distribución Contable";
 const FIELD_COMPONENTE = "Componente Distribuido";
 const FIELD_MONTO_DISTRIBUIDO = "Monto Distribuido";
+const FIELD_ESTADO_PREVIO = "Estado Previo";
+const FIELD_MOTIVO_ANULACION = "Motivo Anulación";
+const FIELD_FECHA_ANULACION = "Fecha Anulación";
+const FIELD_ANULADA_POR = "Anulada Por";
+const FIELD_FECHA_REHABILITACION = "Fecha Rehabilitación";
+const FIELD_REHABILITADA_POR = "Rehabilitada Por";
 
 function pickLinkedId(value: unknown): string | null {
   if (Array.isArray(value)) return (value[0] as string | undefined) ?? null;
@@ -32,6 +38,12 @@ function pickLinkedId(value: unknown): string | null {
 function pickNumber(value: unknown, fallback = 0): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function pickString(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const str = String(value).trim();
+  return str.length ? str : undefined;
 }
 
 function resolveAccount(linkedValue: unknown, cuentasMap: Record<string, string>): { id: string | null; nombre: string | null } {
@@ -69,8 +81,11 @@ function mapTransaccion(record: { id: string; fields: Record<string, unknown> },
   const origen = resolveAccount(fields[FIELD_CUENTA_ORIGEN], cuentasMap);
   const destino = resolveAccount(fields[FIELD_CUENTA_DESTINO], cuentasMap);
 
+  const recordId = String(record?.id ?? "").trim();
+
   return {
-    id: String(record?.id ?? ""),
+    id: recordId,
+    recordId,
     idTransaccion: fields[FIELD_ID_TRANSACCION] ? String(fields[FIELD_ID_TRANSACCION]) : undefined,
     fecha: String(fields[FIELD_FECHA] ?? ""),
     tipoTransaccion: String(fields[FIELD_TIPO_TRANSACCION] ?? ""),
@@ -95,6 +110,12 @@ function mapTransaccion(record: { id: string; fields: Record<string, unknown> },
     esDistribucionContable: Boolean(fields[FIELD_ES_DISTRIBUCION]),
     componenteDistribuido: (fields[FIELD_COMPONENTE] as string | undefined) ?? undefined,
     montoDistribuido: pickNumber(fields[FIELD_MONTO_DISTRIBUIDO], 0),
+    estadoPrevio: pickString(fields[FIELD_ESTADO_PREVIO]),
+    motivoAnulacion: pickString(fields[FIELD_MOTIVO_ANULACION]),
+    fechaAnulacion: pickString(fields[FIELD_FECHA_ANULACION]),
+    anuladaPor: pickString(fields[FIELD_ANULADA_POR]),
+    fechaRehabilitacion: pickString(fields[FIELD_FECHA_REHABILITACION]),
+    rehabilitadaPor: pickString(fields[FIELD_REHABILITADA_POR]),
   } as Transaccion;
 }
 
@@ -120,16 +141,55 @@ export async function getTransacciones(): Promise<Transaccion[]> {
 
 export async function getTransaccionDetalle(id: string) {
   try {
-    const [cuentasMap, txRecords] = await Promise.all([loadCuentasMap(), loadTransaccionesRaw()]);
-    const match = txRecords.find((r) => r.id === id || String((r.fields as any)[FIELD_ID_TRANSACCION]) === id);
+    const tableTx = process.env.AIRTABLE_TABLE_TRANSACCIONES;
+    if (!tableTx) throw new Error("Variable de entorno requerida faltante: AIRTABLE_TABLE_TRANSACCIONES");
 
-    if (!match) return { transaccion: null, detalleReparacion: null, pendientes: [] };
+    const cuentasMapPromise = loadCuentasMap();
+    const normalizedId = String(id ?? "").trim();
+    console.log("[getTransaccionDetalle] id raw:", id, "normalized:", normalizedId);
+    let match: { id: string; fields: Record<string, unknown> } | null = null;
+    let foundBy: "recordId" | "idTransaccion" | "unknown" | null = null;
 
+    // 1) Intento directo por recordId (preferido)
+    if (normalizedId && normalizedId.startsWith("rec")) {
+      const byId = await fetchAirtableRecordById<Record<string, unknown>>(tableTx, normalizedId).catch((err) => {
+        console.warn("[getTransaccionDetalle] fetch by recordId falló", err);
+        return null;
+      });
+      if (byId) {
+        match = { id: byId.id, fields: byId.fields as Record<string, unknown> };
+        foundBy = "recordId";
+      }
+    }
+
+    // 2) Fallback: buscar por recordId o ID Transacción en toda la tabla
+    if (!match) {
+      const txRecords = await loadTransaccionesRaw();
+      const found = txRecords.find(
+        (r) => r.id === normalizedId || String((r.fields as any)[FIELD_ID_TRANSACCION]) === normalizedId
+      );
+      if (found) {
+        match = { id: found.id, fields: found.fields as Record<string, unknown> };
+        foundBy = found.id === normalizedId ? "recordId" : "idTransaccion";
+      }
+    }
+
+    if (!match) {
+      return {
+        transaccion: null,
+        detalleReparacion: null,
+        pendientes: [],
+        error: "No se encontró la transacción por recordId ni por ID Transacción.",
+      };
+    }
+
+    const cuentasMap = await cuentasMapPromise;
     const transaccion = mapTransaccion({ id: match.id, fields: match.fields as Record<string, unknown> }, cuentasMap);
 
-    return { transaccion, detalleReparacion: null, pendientes: [] };
+    return { transaccion, detalleReparacion: null, pendientes: [], foundBy, error: null };
   } catch (error) {
     console.error("Error en getTransaccionDetalle", error);
-    return { transaccion: null, detalleReparacion: null, pendientes: [] };
+    const message = error instanceof Error ? error.message : "Error desconocido al cargar la transacción";
+    return { transaccion: null, detalleReparacion: null, pendientes: [], error: message };
   }
 }

@@ -24,6 +24,12 @@ const FIELD_ESTADO = "Estado";
 const FIELD_ES_DISTRIBUCION = "Es Distribución Contable";
 const FIELD_COMPONENTE = "Componente Distribuido";
 const FIELD_MONTO_DISTRIBUIDO = "Monto Distribuido";
+const FIELD_ESTADO_PREVIO = "Estado Previo";
+const FIELD_MOTIVO_ANULACION = "Motivo Anulación";
+const FIELD_FECHA_ANULACION = "Fecha Anulación";
+const FIELD_ANULADA_POR = "Anulada Por";
+const FIELD_FECHA_REHABILITACION = "Fecha Rehabilitación";
+const FIELD_REHABILITADA_POR = "Rehabilitada Por";
 
 function pickLinkedId(value: unknown): string | null {
   if (Array.isArray(value)) return (value[0] as string | undefined) ?? null;
@@ -33,6 +39,12 @@ function pickLinkedId(value: unknown): string | null {
 function pickNumber(value: unknown, fallback = 0): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function pickString(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const str = String(value).trim();
+  return str.length ? str : undefined;
 }
 
 function resolveAccount(
@@ -71,12 +83,16 @@ export async function GET() {
 
     const data: Transaccion[] = txRecords
       .map((record) => {
+        const recordId = String(record?.id ?? "").trim();
+        if (!recordId) return null;
+
         const fields = (record?.fields as Record<string, unknown>) ?? {};
         const origen = resolveAccount(fields[FIELD_CUENTA_ORIGEN], cuentasMap);
         const destino = resolveAccount(fields[FIELD_CUENTA_DESTINO], cuentasMap);
 
-        return {
-          id: String(record?.id ?? ""),
+        const mapped: Transaccion = {
+          recordId,
+          id: recordId,
           idTransaccion: fields[FIELD_ID_TRANSACCION] ? String(fields[FIELD_ID_TRANSACCION]) : undefined,
           fecha: String(fields[FIELD_FECHA] ?? ""),
           tipoTransaccion: String(fields[FIELD_TIPO_TRANSACCION] ?? ""),
@@ -98,12 +114,27 @@ export async function GET() {
           llevaFactura: Boolean(fields[FIELD_LLEVA_FACTURA]),
           descripcionObservaciones: (fields[FIELD_OBSERVACIONES] as string | undefined) ?? undefined,
           referenciaExterna: (fields[FIELD_REFERENCIA] as string | undefined) ?? undefined,
-        esDistribucionContable: Boolean(fields[FIELD_ES_DISTRIBUCION]),
-        componenteDistribuido: (fields[FIELD_COMPONENTE] as string | undefined) ?? undefined,
-        montoDistribuido: pickNumber(fields[FIELD_MONTO_DISTRIBUIDO], 0),
-        } as Transaccion;
+          esDistribucionContable: Boolean(fields[FIELD_ES_DISTRIBUCION]),
+          componenteDistribuido: (fields[FIELD_COMPONENTE] as string | undefined) ?? undefined,
+          montoDistribuido: pickNumber(fields[FIELD_MONTO_DISTRIBUIDO], 0),
+          estadoPrevio: pickString(fields[FIELD_ESTADO_PREVIO]),
+          motivoAnulacion: pickString(fields[FIELD_MOTIVO_ANULACION]),
+          fechaAnulacion: pickString(fields[FIELD_FECHA_ANULACION]),
+          anuladaPor: pickString(fields[FIELD_ANULADA_POR]),
+          fechaRehabilitacion: pickString(fields[FIELD_FECHA_REHABILITACION]),
+          rehabilitadaPor: pickString(fields[FIELD_REHABILITADA_POR]),
+        };
+
+        console.log("[api/transacciones] mapped", {
+          id: mapped.id,
+          recordId: mapped.recordId,
+          idTransaccion: mapped.idTransaccion,
+          estado: mapped.estado,
+        });
+
+        return mapped;
       })
-      .filter((tx) => tx.id)
+      .filter((tx): tx is Transaccion => Boolean(tx?.recordId))
       .sort((a, b) => {
         const timeDiff = parseDate(b.fecha) - parseDate(a.fecha);
         if (timeDiff !== 0) return timeDiff;

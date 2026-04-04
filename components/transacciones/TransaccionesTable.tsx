@@ -1,10 +1,11 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Transaccion } from "@/types/transaccion";
 import { StatCard } from "@/components/dashboard/StatCard";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
 import { formatCurrency, formatDate } from "@/lib/helpers";
 
 interface Props {
@@ -87,6 +88,8 @@ function classify(tx: Transaccion): string {
 }
 
 export default function TransaccionesTable({ transacciones, currency = "USD", pendientesTotal = 0 }: Props) {
+  const [rows, setRows] = useState<Transaccion[]>(transacciones);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [searchRef, setSearchRef] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -97,22 +100,41 @@ export default function TransaccionesTable({ transacciones, currency = "USD", pe
   const [cuentaFilter, setCuentaFilter] = useState("");
   const [quickRange, setQuickRange] = useState<QuickRange>("custom");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("todas");
+  const [modalAnular, setModalAnular] = useState<{
+    open: boolean;
+    tx: Transaccion | null;
+    motivo: string;
+    error: string | null;
+    loading: boolean;
+  }>({ open: false, tx: null, motivo: "", error: null, loading: false });
 
-  const tipos = useMemo(() => Array.from(new Set(transacciones.map((t) => t.tipoTransaccion || ""))).filter(Boolean), [transacciones]);
-  const conceptos = useMemo(() => Array.from(new Set(transacciones.map((t) => t.concepto || ""))).filter(Boolean), [transacciones]);
-  const estados = useMemo(() => Array.from(new Set(transacciones.map((t) => t.estado || ""))).filter(Boolean), [transacciones]);
-  const metodos = useMemo(() => Array.from(new Set(transacciones.map((t) => t.metodoPago || ""))).filter(Boolean), [transacciones]);
+  useEffect(() => {
+    setRows(transacciones);
+  }, [transacciones]);
+
+  const todayIso = () => new Date().toISOString().slice(0, 10);
+
+  const recordKey = (tx: Transaccion) => (tx.recordId ?? tx.id ?? "").trim();
+
+  const updateRow = (id: string, updates: Partial<Transaccion>) => {
+    setRows((prev) => prev.map((t) => (recordKey(t) === id ? { ...t, ...updates } : t)));
+  };
+
+  const tipos = useMemo(() => Array.from(new Set(rows.map((t) => t.tipoTransaccion || ""))).filter(Boolean), [rows]);
+  const conceptos = useMemo(() => Array.from(new Set(rows.map((t) => t.concepto || ""))).filter(Boolean), [rows]);
+  const estados = useMemo(() => Array.from(new Set(rows.map((t) => t.estado || ""))).filter(Boolean), [rows]);
+  const metodos = useMemo(() => Array.from(new Set(rows.map((t) => t.metodoPago || ""))).filter(Boolean), [rows]);
   const cuentas = useMemo(() => {
     const set = new Set<string>();
-    transacciones.forEach((t) => {
+    rows.forEach((t) => {
       if (t.cuentaOrigen) set.add(t.cuentaOrigen);
       if (t.cuentaDestino) set.add(t.cuentaDestino);
     });
     return Array.from(set).sort();
-  }, [transacciones]);
+  }, [rows]);
 
   const filtered = useMemo(() => {
-    return transacciones.filter((tx) => {
+    return rows.filter((tx) => {
       if (quickFilter === "reales" && isInterno(tx)) return false;
       if (quickFilter === "internos" && !isInterno(tx)) return false;
       if (quickFilter === "ventas" && classify(tx) !== "Venta") return false;
@@ -129,15 +151,17 @@ export default function TransaccionesTable({ transacciones, currency = "USD", pe
       if (dateTo && new Date(tx.fecha) > new Date(dateTo)) return false;
       return true;
     });
-  }, [transacciones, searchRef, tipoFilter, conceptoFilter, estadoFilter, metodoFilter, cuentaFilter, dateFrom, dateTo, quickFilter]);
+  }, [rows, searchRef, tipoFilter, conceptoFilter, estadoFilter, metodoFilter, cuentaFilter, dateFrom, dateTo, quickFilter]);
+
+  const filteredActivas = useMemo(() => filtered.filter((tx) => !isCanceled(tx)), [filtered]);
 
   // Tarjetas (sobre el subconjunto filtrado, excepto Pendiente por acreditar que usa fuente de pendientes)
-  const ventasBrutas = filtered.filter(isVenta).reduce((acc, t) => acc + (t.montoTotal || 0), 0);
-  const ingresosReales = filtered
+  const ventasBrutas = filteredActivas.filter(isVenta).reduce((acc, t) => acc + (t.montoTotal || 0), 0);
+  const ingresosReales = filteredActivas
     .filter((t) => isAcreditacion(t) || isIngresoDirectoDisponible(t))
     .reduce((acc, t) => acc + (t.montoTotal || 0), 0);
-  const comisiones = filtered.filter(isAcreditacion).reduce((acc, t) => acc + (t.comision || 0), 0);
-  const movimientosInternos = filtered.filter(isInterno).length;
+  const comisiones = filteredActivas.filter(isAcreditacion).reduce((acc, t) => acc + (t.comision || 0), 0);
+  const movimientosInternos = filteredActivas.filter(isInterno).length;
 
   const totalPendientes = pendientesTotal; // ya viene desde la tabla de pendientes
 
@@ -178,6 +202,103 @@ export default function TransaccionesTable({ transacciones, currency = "USD", pe
     const { from, to } = quickRangeDates(range);
     setDateFrom(from);
     setDateTo(to);
+  };
+
+  const openAnular = (tx: Transaccion) => {
+    if (actionLoading) return;
+    setModalAnular({ open: true, tx, motivo: "", error: null, loading: false });
+  };
+
+  const handleConfirmAnular = async () => {
+    const { tx, motivo } = modalAnular;
+    if (!tx) return;
+    const trimmed = motivo.trim();
+    if (!trimmed) {
+      setModalAnular((prev) => ({ ...prev, error: "El motivo de anulación es obligatorio" }));
+      return;
+    }
+    const id = recordKey(tx);
+    if (!id) {
+      setModalAnular((prev) => ({ ...prev, error: "No se encontró el identificador de la transacción." }));
+      return;
+    }
+    const url = `/api/transacciones/${encodeURIComponent(id)}/anular`;
+    setModalAnular((prev) => ({ ...prev, loading: true, error: null }));
+    setActionLoading(id);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo: trimmed }),
+      });
+      const json = (await res.json()) as { success?: boolean; error?: string };
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || "No se pudo anular la transacción");
+      }
+      updateRow(id, {
+        estadoPrevio: tx.estado || tx.estadoPrevio,
+        estado: "Anulado",
+        motivoAnulacion: trimmed,
+        fechaAnulacion: todayIso(),
+      });
+      setModalAnular({ open: false, tx: null, motivo: "", error: null, loading: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo anular la transacción";
+      setModalAnular((prev) => ({ ...prev, error: message, loading: false }));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRehabilitar = async (tx: Transaccion) => {
+    // Migrado a modal reutilizable: se maneja en openRehabilitar / handleConfirmRehabilitar
+  };
+
+  const [modalRehab, setModalRehab] = useState<{
+    open: boolean;
+    tx: Transaccion | null;
+    error: string | null;
+    loading: boolean;
+  }>({ open: false, tx: null, error: null, loading: false });
+
+  const openRehabilitar = (tx: Transaccion) => {
+    if (actionLoading) return;
+    setModalRehab({ open: true, tx, error: null, loading: false });
+  };
+
+  const handleConfirmRehabilitar = async () => {
+    const { tx } = modalRehab;
+    if (!tx) return;
+    const id = recordKey(tx);
+    if (!id) {
+      setModalRehab((prev) => ({ ...prev, error: "No se encontró el identificador de la transacción." }));
+      return;
+    }
+    const url = `/api/transacciones/${encodeURIComponent(id)}/rehabilitar`;
+    setModalRehab((prev) => ({ ...prev, loading: true, error: null }));
+    setActionLoading(id);
+    try {
+      const res = await fetch(url, { method: "POST" });
+      const json = (await res.json()) as { success?: boolean; error?: string; data?: { estado?: string } };
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || "No se pudo rehabilitar la transacción");
+      }
+      const restored = tx.estadoPrevio || json.data?.estado || "Confirmado";
+      updateRow(id, {
+        estado: restored,
+        fechaRehabilitacion: todayIso(),
+      });
+      setModalRehab({ open: false, tx: null, error: null, loading: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo rehabilitar la transacción";
+      setModalRehab((prev) => ({ ...prev, error: message, loading: false }));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const irADetalle = (tx: Transaccion) => {
+    window.location.assign(`/transacciones/${recordKey(tx)}`);
   };
 
   const handleExport = () => {
@@ -345,15 +466,19 @@ export default function TransaccionesTable({ transacciones, currency = "USD", pe
                 <th className="px-3 py-2 text-left">Método</th>
                 <th className="px-3 py-2 text-right">Monto</th>
                 <th className="px-3 py-2 text-left">Estado</th>
+                <th className="px-3 py-2 text-left">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map((txn) => {
                 const clasif = classify(txn);
+                const canceled = isCanceled(txn);
+                const rowClass = canceled ? "bg-slate-50 text-slate-500 opacity-70" : "";
+                const key = recordKey(txn) || txn.idTransaccion || txn.id;
                 return (
-                  <tr key={txn.id} className="hover:bg-slate-50">
+                  <tr key={key} className={`row hoverable ${rowClass}`}>
                     <td className="px-3 py-2 whitespace-nowrap text-left">{formatDate(txn.fecha)}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-left">{txn.idTransaccion ?? txn.id}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-left">{txn.idTransaccion ?? recordKey(txn)}</td>
                     <td className="px-3 py-2 text-left">
                       <span className={`rounded-full px-2 py-1 text-xs font-semibold ${tipoBadge(clasif)}`}>
                         {clasif}
@@ -372,6 +497,32 @@ export default function TransaccionesTable({ transacciones, currency = "USD", pe
                         {txn.estado || "-"}
                       </span>
                     </td>
+                    <td className="px-3 py-2 text-left">
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => irADetalle(txn)}>
+                          Ver
+                        </Button>
+                        {!canceled ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={actionLoading === recordKey(txn)}
+                            onClick={() => openAnular(txn)}
+                          >
+                            Anular
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            disabled={actionLoading === recordKey(txn)}
+                            onClick={() => openRehabilitar(txn)}
+                          >
+                            Rehabilitar
+                          </Button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -383,6 +534,43 @@ export default function TransaccionesTable({ transacciones, currency = "USD", pe
       {!filtered.length ? (
         <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">No se encontraron transacciones con los filtros actuales.</div>
       ) : null}
+
+      <Modal
+        open={modalAnular.open}
+        title="¿Estás seguro de anular esta transacción?"
+        description="Esta acción marcará la transacción como anulada y dejará de afectar los cálculos contables."
+        confirmLabel={modalAnular.loading ? "Anulando..." : "Confirmar anulación"}
+        cancelLabel="Cancelar"
+        loading={modalAnular.loading}
+        error={modalAnular.error}
+        onClose={() => setModalAnular({ open: false, tx: null, motivo: "", error: null, loading: false })}
+        onConfirm={handleConfirmAnular}
+      >
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-slate-700">
+            Motivo de anulación
+            <textarea
+              className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+              rows={3}
+              value={modalAnular.motivo}
+              onChange={(e) => setModalAnular((prev) => ({ ...prev, motivo: e.target.value }))}
+              disabled={modalAnular.loading}
+            />
+          </label>
+        </div>
+      </Modal>
+
+      <Modal
+        open={modalRehab.open}
+        title="¿Estás seguro de rehabilitar esta transacción?"
+        description="Esta acción volverá a activar la transacción y hará que vuelva a afectar los cálculos contables del sistema."
+        confirmLabel={modalRehab.loading ? "Rehabilitando..." : "Confirmar rehabilitación"}
+        cancelLabel="Cancelar"
+        loading={modalRehab.loading}
+        error={modalRehab.error}
+        onClose={() => setModalRehab({ open: false, tx: null, error: null, loading: false })}
+        onConfirm={handleConfirmRehabilitar}
+      />
     </div>
   );
 }

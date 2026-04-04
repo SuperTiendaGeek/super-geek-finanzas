@@ -567,20 +567,20 @@ export default function ReportesView({ cuentas, transacciones, pendientes, distr
       </Card>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-900">Resumen rápido</h2>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Resumen rápido</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {resumenCards.map((item) => (
             <div
               key={item.label}
-              className="rounded-xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm backdrop-blur"
+              className="rounded-xl border border-[color:var(--tone-blue-border)] bg-[var(--tone-blue-bg)] px-4 py-3 shadow-sm"
             >
-              <p className="text-xs uppercase tracking-wide text-slate-500">{item.label}</p>
-              <p className="mt-1 text-xl font-semibold text-slate-900">
+              <p className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">{item.label}</p>
+              <p className="mt-1 text-xl font-semibold text-[var(--text-primary)]">
                 {formatCurrency(item.value, currency)}
               </p>
-              {item.hint ? <p className="text-xs text-slate-500">{item.hint}</p> : null}
+              {item.hint ? <p className="text-xs text-[var(--text-secondary)]">{item.hint}</p> : null}
               {item.pendiente ? (
-                <p className="text-xs text-amber-700">Pendiente: {formatCurrency(item.pendiente, currency)}</p>
+                <p className="text-xs text-[var(--text-secondary)]">Pendiente: {formatCurrency(item.pendiente, currency)}</p>
               ) : null}
             </div>
           ))}
@@ -613,7 +613,7 @@ export default function ReportesView({ cuentas, transacciones, pendientes, distr
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {saldosPorCuenta.map((c) => (
-                      <tr key={c.id} className="hover:bg-slate-50">
+                      <tr key={c.id} className="row hoverable">
                         <td className="px-3 py-2 font-medium text-slate-900">{c.nombre}</td>
                         <td className="px-3 py-2 text-slate-700">{c.tipo}</td>
                         <td className="px-3 py-2 whitespace-nowrap font-semibold text-slate-900">
@@ -659,7 +659,7 @@ export default function ReportesView({ cuentas, transacciones, pendientes, distr
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {pendientesFiltrados.map((p) => (
-                      <tr key={p.id} className="hover:bg-slate-50">
+                      <tr key={p.id} className="row hoverable">
                         <td className="px-3 py-2 whitespace-nowrap">{formatDate(p.fecha)}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{p.transaccionRelacionadaId ?? "-"}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{p.medio}</td>
@@ -708,7 +708,7 @@ export default function ReportesView({ cuentas, transacciones, pendientes, distr
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {transaccionesTabla.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-slate-50">
+                    <tr key={tx.id} className="row hoverable">
                       <td className="px-3 py-2 whitespace-nowrap">{formatDate(tx.fecha)}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{tx.idTransaccion ?? tx.id}</td>
                       <td className="px-3 py-2 capitalize">{tx.tipoTransaccion || "-"}</td>

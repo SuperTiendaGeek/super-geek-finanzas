@@ -164,7 +164,7 @@ export async function GET() {
 
 
 
-    const transaccionesMap: Record<string, { capital: number; utilidad: number; iva: number; montoTotal: number; repuestoExterno: number }>
+    const transaccionesMap: Record<string, { capital: number; utilidad: number; iva: number; montoTotal: number; repuestoExterno: number; estado: string }>
 
       = transacciones.reduce((acc, r) => {
 
@@ -182,11 +182,13 @@ export async function GET() {
 
           repuestoExterno: pickNumber(f["Repuesto Externo Asignado"], 0),
 
+          estado: pickString(f["Estado"] ?? ""),
+
         };
 
         return acc;
 
-      }, {} as Record<string, { capital: number; utilidad: number; iva: number; montoTotal: number; repuestoExterno: number }>);
+      }, {} as Record<string, { capital: number; utilidad: number; iva: number; montoTotal: number; repuestoExterno: number; estado: string }>);
 
 
 
@@ -194,7 +196,19 @@ export async function GET() {
 
       const estado = pickString(r.fields?.["Estado"] ?? "Pendiente").toLowerCase();
 
-      return estado === "pendiente";
+      if (estado !== "pendiente") return false;
+
+      const transaccionRelacionadaId = pickLinkedId(r.fields?.["Transacción Relacionada"]);
+
+      const estadoRelacion = transaccionRelacionadaId ? pickString(transaccionesMap[transaccionRelacionadaId]?.estado) : "";
+
+      if (estadoRelacion && (estadoRelacion.toLowerCase().includes("anul") || estadoRelacion.toLowerCase().includes("cancel"))) {
+
+        return false;
+
+      }
+
+      return true;
 
     });
 

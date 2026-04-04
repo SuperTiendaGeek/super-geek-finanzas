@@ -436,7 +436,7 @@ export async function POST(request: Request) {
 
       total = safeNumber(venta.montoTotal, 0);
 
-      capital = total;
+      capital = 0;
 
       utilidad = 0;
 
@@ -448,7 +448,42 @@ export async function POST(request: Request) {
 
     const cuentasIndex = await buildCuentasIndex(tableCuentas);
 
+    // Rama directa para "Otro ingreso": sin mixto, sin pendientes, sin distribución extra
+    if (concepto === "otro") {
+      if (!["efectivo", "transferencia"].includes(metodoPago)) {
+        return NextResponse.json(
+          { success: false, error: 'Para "Otro ingreso" solo se permite Efectivo o Transferencia bancaria.' },
+          { status: 400 }
+        );
+      }
 
+      const meta = METODO_META[metodoPago] ?? METODO_META.efectivo;
+      const cuentaDestinoId = resolveCuentaId(meta.cuentaDestinoFinal, cuentasIndex);
+
+      const txFields: Record<string, unknown> = {
+        Fecha: fecha,
+        "Tipo de Transacción": TIPO_TRANSACCION_VALOR,
+        Concepto: CONCEPTO_LABEL[concepto] ?? concepto,
+        Estado: meta.estado,
+        "Cuenta Destino": cuentaDestinoId ? [cuentaDestinoId] : undefined,
+        "Método de Pago": meta.label,
+        "Monto Total": total,
+        Capital: capital,
+        Utilidad: utilidad,
+        IVA: iva,
+        "Repuesto Proveedor Externo": repuestoExterno,
+        "Lleva Factura": false,
+        "Referencia Externa": payload.referencia ?? "",
+        "Descripción / Observaciones": payload.observaciones ?? "",
+      };
+
+      const [txRecord] = await createAirtableRecords(tableTx, [txFields]);
+      if (!txRecord?.id) {
+        throw new Error("Airtable no devolvió ID de transacción");
+      }
+
+      return NextResponse.json({ success: true, data: { transaccionId: txRecord.id } });
+    }
 
     const pagosMixtos = (payload.pagosMixtos ?? []).filter((p) => p && p.metodo && p.monto !== undefined);
 
@@ -458,9 +493,22 @@ export async function POST(request: Request) {
 
 
 
-    
+    // Reglas específicas para "Otro ingreso"
+    if (concepto === "otro" && !["efectivo", "transferencia"].includes(metodoPago)) {
+      return NextResponse.json(
+        { success: false, error: 'Para "Otro ingreso" solo se permite Efectivo o Transferencia bancaria.' },
+        { status: 400 }
+      );
+    }
 
     if (metodoPago === "mixto") {
+
+      if (concepto === "otro") {
+        return NextResponse.json(
+          { success: false, error: 'El pago mixto no está permitido para "Otro ingreso".' },
+          { status: 400 }
+        );
+      }
 
       if (!tablePagos) {
 
@@ -939,9 +987,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: { transaccionId: txRecord.id } });
 
   } catch (error) {
-
+    console.error("[api/ingresos] error", error);
     const message = error instanceof Error ? error.message : "Error desconocido";
-
     return NextResponse.json({ success: false, error: message }, { status: 500 });
 
   }

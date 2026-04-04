@@ -8,15 +8,17 @@ import { DEFAULT_CURRENCY } from "@/lib/constants";
 import { formatCurrency, roundMoney } from "@/lib/helpers";
 import type { DistribucionContable } from "@/services/distribucion";
 
+type ComponenteKey = "capital" | "utilidad" | "iva";
+
 type Props = {
   distribucion: DistribucionContable;
   saldoIngresos: number;
   currency?: string;
+  saldosDestino?: Partial<Record<ComponenteKey, number>>;
+  totalesUsados?: Partial<Record<ComponenteKey, number>>;
 };
 
 type Mensaje = { type: "success" | "error"; text: string } | null;
-
-type ComponenteKey = "capital" | "utilidad" | "iva";
 
 const COMPONENTES: { key: ComponenteKey; label: string }[] = [
   { key: "capital", label: "Capital" },
@@ -24,7 +26,19 @@ const COMPONENTES: { key: ComponenteKey; label: string }[] = [
   { key: "iva", label: "IVA" },
 ];
 
-export default function DistribucionPanel({ distribucion, saldoIngresos, currency = DEFAULT_CURRENCY }: Props) {
+const DISPONIBLE_LABEL: Record<ComponenteKey, string> = {
+  capital: "Capital disponible",
+  utilidad: "Utilidad disponible",
+  iva: "IVA disponible",
+};
+
+export default function DistribucionPanel({
+  distribucion,
+  saldoIngresos,
+  currency = DEFAULT_CURRENCY,
+  saldosDestino,
+  totalesUsados,
+}: Props) {
   const router = useRouter();
   const [montos, setMontos] = useState<Record<ComponenteKey, string>>({ capital: "", utilidad: "", iva: "" });
   const [loading, setLoading] = useState<ComponenteKey | null>(null);
@@ -37,6 +51,24 @@ export default function DistribucionPanel({ distribucion, saldoIngresos, currenc
       iva: roundMoney(distribucion.iva.pendiente),
     }),
     [distribucion]
+  );
+
+  const disponibles = useMemo(
+    () => ({
+      capital: roundMoney(saldosDestino?.capital ?? 0),
+      utilidad: roundMoney(saldosDestino?.utilidad ?? 0),
+      iva: roundMoney(saldosDestino?.iva ?? 0),
+    }),
+    [saldosDestino]
+  );
+
+  const usados = useMemo(
+    () => ({
+      capital: roundMoney(totalesUsados?.capital ?? 0),
+      utilidad: roundMoney(totalesUsados?.utilidad ?? 0),
+      iva: roundMoney(totalesUsados?.iva ?? 0),
+    }),
+    [totalesUsados]
   );
 
   const saldo = roundMoney(saldoIngresos);
@@ -97,23 +129,25 @@ export default function DistribucionPanel({ distribucion, saldoIngresos, currenc
         {COMPONENTES.map(({ key, label }) => {
           const data = distribucion[key];
           const pendiente = pendientes[key];
+          const disponible = disponibles[key];
+          const usado = usados[key];
           const disabled = loading === key;
 
           return (
             <Card key={key}>
-              <div className="space-y-2 text-sm text-slate-700">
-                <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-                <p>
-                  Generado: <span className="font-semibold text-slate-900">{formatCurrency(roundMoney(data.generado), currency)}</span>
-                </p>
-                <p>
-                  Distribuido: <span className="font-semibold text-slate-900">{formatCurrency(roundMoney(data.distribuido), currency)}</span>
-                </p>
-                <p>
-                  Pendiente: <span className="font-semibold text-slate-900">{formatCurrency(pendiente, currency)}</span>
-                </p>
+              <div className="flex h-full flex-col gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+                  <p className="text-xs text-slate-500">Pendiente a distribuir</p>
+                  <p className="text-3xl font-semibold text-slate-900">{formatCurrency(pendiente, currency)}</p>
+                </div>
 
-                <div className="space-y-2 pt-2">
+                <div className="space-y-2 text-sm text-slate-700">
+                  <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                    <span className="text-slate-600">{DISPONIBLE_LABEL[key]}</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(disponible, currency)}</span>
+                  </div>
+
                   <label className="block text-xs font-medium text-slate-600">
                     Monto a distribuir
                     <input
@@ -142,6 +176,17 @@ export default function DistribucionPanel({ distribucion, saldoIngresos, currenc
                     >
                       Distribuir monto
                     </Button>
+                  </div>
+                </div>
+
+                <div className="mt-auto space-y-1 border-t border-dashed border-slate-200 pt-2 text-xs text-slate-500">
+                  <div className="flex items-center justify-between">
+                    <span>Generado total</span>
+                    <span className="font-semibold text-slate-700">{formatCurrency(roundMoney(data.generado), currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Total usado</span>
+                    <span className="font-semibold text-slate-700">{formatCurrency(usado, currency)}</span>
                   </div>
                 </div>
               </div>

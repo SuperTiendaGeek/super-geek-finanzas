@@ -132,7 +132,7 @@ export default function PendientesTable({ pendientes: initial }: Props) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {pendientes.map((p) => (
-              <tr key={p.id} className="align-middle hover:bg-slate-50">
+              <tr key={p.id} className="align-middle row hoverable">
                 <td className="px-3 py-2 whitespace-nowrap">{formatDate(p.fecha)}</td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   <Badge className="bg-slate-100 text-slate-700">{p.medio || "-"}</Badge>

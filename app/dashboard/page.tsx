@@ -9,7 +9,7 @@ import { getTransacciones } from "@/services/transacciones";
 import { calcularDistribucionContable } from "@/services/distribucion";
 import { getPendientes } from "@/services/pendientes";
 import { calcularSaldosPorCuenta } from "@/lib/calculations";
-import { formatCurrency } from "@/lib/helpers";
+import { formatCurrency, roundMoney } from "@/lib/helpers";
 import { DEFAULT_CURRENCY } from "@/lib/constants";
 import { Cuenta } from "@/types/cuenta";
 import { Transaccion } from "@/types/transaccion";
@@ -66,6 +66,20 @@ function pickSaldoPorNombre(nombre: string, cuentas: Cuenta[], saldos: Record<st
   return saldos[cuenta.id] ?? 0;
 }
 
+function matchCuentaOrigen(tx: Transaccion, cuenta?: Cuenta) {
+  if (!cuenta) return false;
+  const targetName = normalize(cuenta.nombre);
+  const origen = tx.cuentaOrigenId ?? tx.cuentaOrigen;
+  const origenNombre = tx.cuentaOrigen;
+  return origen === cuenta.id || normalize(origen) === targetName || normalize(origenNombre) === targetName;
+}
+
+function totalEgresadoPorCuenta(nombre: string, cuentas: Cuenta[], transacciones: Transaccion[]) {
+  const cuenta = cuentas.find((c) => c.nombre === nombre);
+  if (!cuenta) return 0;
+  return roundMoney(sumAmounts(transacciones, (t) => isConfirmed(t) && isEgreso(t) && matchCuentaOrigen(t, cuenta)));
+}
+
 export default async function DashboardPage() {
   let cuentas: Cuenta[] = [];
   let transacciones: Transaccion[] = [];
@@ -98,8 +112,21 @@ export default async function DashboardPage() {
 
   const saldoCaja = pickSaldoPorNombre("Caja Registradora", cuentas, saldos);
   const saldoIngresos = pickSaldoPorNombre("SGINGRESOS", cuentas, saldos);
+  const saldoCapital = pickSaldoPorNombre("SGCAPITAL", cuentas, saldos);
+  const saldoUtilidad = pickSaldoPorNombre("SGUTILIDAD", cuentas, saldos);
+  const saldoIva = pickSaldoPorNombre("SGIVA", cuentas, saldos);
 
   const distribucion = calcularDistribucionContable(transacciones);
+  const saldosDestino = {
+    capital: saldoCapital,
+    utilidad: saldoUtilidad,
+    iva: saldoIva,
+  };
+  const totalesUsados = {
+    capital: totalEgresadoPorCuenta("SGCAPITAL", cuentas, transacciones),
+    utilidad: totalEgresadoPorCuenta("SGUTILIDAD", cuentas, transacciones),
+    iva: totalEgresadoPorCuenta("SGIVA", cuentas, transacciones),
+  };
 
   const transaccionesOrdenadas = [...transacciones].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
@@ -109,12 +136,6 @@ export default async function DashboardPage() {
 
   const anuladas = transacciones.filter((t) => isCanceled(t)).slice(0, 3);
   if (anuladas.length) alerts.push(`Hay ${anuladas.length} movimiento(s) anulado(s) reciente(s).`);
-
-  const distribucionItems = [
-    ["Capital", distribucion.capital],
-    ["Utilidad", distribucion.utilidad],
-    ["IVA", distribucion.iva],
-  ] as const;
 
   return (
     <PageContainer title="Dashboard" subtitle="Visión general de tus finanzas" actions={null}>
@@ -130,8 +151,14 @@ export default async function DashboardPage() {
           </div>
         </Section>
 
-        <Section title="Distribución contable" description="Generado, distribuido y pendiente por componente">
-          <DistribucionPanel distribucion={distribucion} saldoIngresos={saldoIngresos} currency={DEFAULT_CURRENCY} />
+        <Section title="Distribución contable" description="Pendiente a distribuir, saldos destino y totales históricos por componente">
+          <DistribucionPanel
+            distribucion={distribucion}
+            saldoIngresos={saldoIngresos}
+            currency={DEFAULT_CURRENCY}
+            saldosDestino={saldosDestino}
+            totalesUsados={totalesUsados}
+          />
         </Section>
 
         <Section title="Actividad reciente" description="Últimas transacciones registradas">

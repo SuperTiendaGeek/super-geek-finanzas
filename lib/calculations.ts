@@ -36,7 +36,9 @@ export function calcularSaldosPorCuenta(
   }
 
   for (const txn of transacciones) {
-    if ((txn.estado ?? "").toLowerCase() === "pendiente") continue;
+    const estado = (txn.estado ?? "").toLowerCase();
+    if (estado.includes("pend")) continue;
+    if (estado.includes("anul") || estado.includes("cancel")) continue;
     const monto = normalizeAmount(txn.montoTotal);
     if (!monto) continue;
 
@@ -61,7 +63,8 @@ export function calcularSaldoCuenta(
   transacciones: Transaccion[]
 ): number {
   return transacciones.reduce((acc, txn) => {
-    if ((txn.estado ?? "").toLowerCase() === "pendiente") return acc;
+    const estado = (txn.estado ?? "").toLowerCase();
+    if (estado.includes("pend") || estado.includes("anul") || estado.includes("cancel")) return acc;
     return acc + transactionImpactForAccount(txn, cuentaId);
   }, 0);
 }
